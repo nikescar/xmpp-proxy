@@ -18,8 +18,6 @@ on:
           - x86_64-unknown-linux-musl
           - i686-unknown-linux-gnu
           - i686-unknown-linux-musl
-          - i586-unknown-linux-gnu
-          - i586-unknown-linux-musl
           - aarch64-unknown-linux-gnu
           - aarch64-unknown-linux-musl
           - armv7-unknown-linux-gnueabihf
@@ -64,14 +62,6 @@ jobs:
           - name: Linux i686 musl
             target: i686-unknown-linux-musl
             build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-ring"
-
-          - name: Linux i586 GNU
-            target: i586-unknown-linux-gnu
-            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-aws-lc-rs"
-
-          - name: Linux i586 musl
-            target: i586-unknown-linux-musl
-            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-aws-lc-rs"
 
           # Linux aarch64
           - name: Linux aarch64 GNU
