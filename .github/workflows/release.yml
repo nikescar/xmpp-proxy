@@ -1,0 +1,278 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - v*
+    branches:
+      - test
+  workflow_dispatch:
+
+env:
+  RUST_VERSION: nightly
+  BIN_NAME: "xmpp-proxy"
+
+jobs:
+  build:
+    name: Build - ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.os || 'ubuntu-22.04' }}
+    strategy:
+      matrix:
+        platform:
+          # Linux x86_64
+          - name: Linux x86_64 GNU
+            target: x86_64-unknown-linux-gnu
+            build-args: "--release"
+
+          - name: Linux x86_64 musl
+            target: x86_64-unknown-linux-musl
+            build-args: "--release"
+
+          # Linux i686/i586
+          - name: Linux i686 GNU
+            target: i686-unknown-linux-gnu
+            build-args: "--release"
+
+          - name: Linux i686 musl
+            target: i686-unknown-linux-musl
+            build-args: "--release"
+
+          - name: Linux i586 GNU
+            target: i586-unknown-linux-gnu
+            build-args: "--release"
+
+          - name: Linux i586 musl
+            target: i586-unknown-linux-musl
+            build-args: "--release"
+
+          # Linux aarch64
+          - name: Linux aarch64 GNU
+            target: aarch64-unknown-linux-gnu
+            build-args: "--release"
+
+          - name: Linux aarch64 musl
+            target: aarch64-unknown-linux-musl
+            build-args: "--release"
+
+          # Linux armv7
+          - name: Linux armv7 GNUhf
+            target: armv7-unknown-linux-gnueabihf
+            build-args: "--release"
+
+          - name: Linux armv7 muslhf
+            target: armv7-unknown-linux-musleabihf
+            build-args: "--release"
+
+          # Linux arm
+          - name: Linux arm GNUeabi
+            target: arm-unknown-linux-gnueabi
+            build-args: "--release"
+
+          - name: Linux arm GNUhf
+            target: arm-unknown-linux-gnueabihf
+            build-args: "--release"
+
+          - name: Linux arm musleabi
+            target: arm-unknown-linux-musleabi
+            build-args: "--release"
+
+          - name: Linux arm muslhf
+            target: arm-unknown-linux-musleabihf
+            build-args: "--release"
+
+          # Linux armv5te
+          - name: Linux armv5te GNUeabi
+            target: armv5te-unknown-linux-gnueabi
+            build-args: "--release"
+
+          - name: Linux armv5te musleabi
+            target: armv5te-unknown-linux-musleabi
+            build-args: "--release"
+
+          # Android
+          - name: Android x86_64
+            target: x86_64-linux-android
+            build-args: "--release"
+
+          - name: Android i686
+            target: i686-linux-android
+            build-args: "--release"
+
+          - name: Android aarch64
+            target: aarch64-linux-android
+            build-args: "--release"
+
+          - name: Android armv7
+            target: armv7-linux-androideabi
+            build-args: "--release"
+
+          - name: Android arm
+            target: arm-linux-androideabi
+            build-args: "--release"
+
+          # Windows
+          - name: Windows x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-gnu
+            build-args: "--release"
+
+    steps:
+      - name: Linux - Install Build Dependencies
+        if: contains(matrix.platform.target, 'linux') && !contains(matrix.platform.target, 'android')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Android - Install Build Dependencies
+        if: contains(matrix.platform.target, 'android')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y android-libunwind android-libunwind-dev libunwind-dev musl-tools llvm-14 clang llvm
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Update Version from Git Tag
+        shell: bash
+        run: |
+          # Extract version from git tag (remove 'v' prefix if present)
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION=$(git describe --tags --abbrev=0 | sed 's/^v//')
+            echo "Detected version: $VERSION"
+            # Update version in Cargo.toml (compatible with both GNU and BSD sed)
+            sed -i.bak "s/^version = .*/version = \"$VERSION\"/" ./Cargo.toml && rm -f ./Cargo.toml.bak
+            echo "Updated Cargo.toml with version $VERSION"
+            grep "^version = " ./Cargo.toml
+          else
+            echo "Not a tag build, skipping version update"
+            VERSION=$(git describe --tags --always --dirty)
+            echo "Build version: $VERSION"
+          fi
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: ${{ matrix.platform.target }}
+
+      - name: Install cross for cross-compilation
+        if: |
+          contains(matrix.platform.target, 'android') ||
+          contains(matrix.platform.target, 'musl') ||
+          contains(matrix.platform.target, 'gnueabi') ||
+          contains(matrix.platform.target, 'i586') ||
+          contains(matrix.platform.target, 'i686') && !contains(matrix.platform.os, 'windows')
+        run: |
+          cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build Binary (cross)
+        if: |
+          contains(matrix.platform.target, 'android') ||
+          contains(matrix.platform.target, 'musl') ||
+          contains(matrix.platform.target, 'gnueabi') ||
+          contains(matrix.platform.target, 'i586') ||
+          contains(matrix.platform.target, 'i686') && !contains(matrix.platform.os, 'windows')
+        run: |
+          cross +nightly build ${{ matrix.platform.build-args }} --target ${{ matrix.platform.target }}
+
+      - name: Build Binary (cargo)
+        if: |
+          !contains(matrix.platform.target, 'android') &&
+          !contains(matrix.platform.target, 'musl') &&
+          !contains(matrix.platform.target, 'gnueabi') &&
+          !contains(matrix.platform.target, 'i586') &&
+          (!contains(matrix.platform.target, 'i686') || contains(matrix.platform.os, 'windows'))
+        run: |
+          cargo +nightly build ${{ matrix.platform.build-args }} --target ${{ matrix.platform.target }}
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xmpp-proxy-${{ matrix.platform.target }}
+          path: target/${{ matrix.platform.target }}/release/xmpp-proxy${{ contains(matrix.platform.target, 'windows') && '.exe' || '' }}
+          retention-days: 1
+
+  release:
+    name: Release
+    needs: [build]
+    if: startsWith( github.ref, 'refs/tags/v' )
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare Release Artifacts
+        run: |
+          mkdir -p distbin/
+
+          # Copy all binaries to distbin with proper naming
+          for dir in artifacts/xmpp-proxy-*; do
+            if [ -d "$dir" ]; then
+              target=$(basename "$dir" | sed 's/^xmpp-proxy-//')
+              if [ -f "$dir/xmpp-proxy.exe" ]; then
+                cp "$dir/xmpp-proxy.exe" "distbin/xmpp-proxy-${target}.exe"
+              elif [ -f "$dir/xmpp-proxy" ]; then
+                cp "$dir/xmpp-proxy" "distbin/xmpp-proxy-${target}"
+                chmod +x "distbin/xmpp-proxy-${target}"
+              fi
+            fi
+          done
+
+          # Copy config file
+          cp xmpp-proxy.toml distbin/
+
+      - name: Generate Checksums
+        run: |
+          cd distbin
+          sha256sum xmpp-proxy-* xmpp-proxy.toml > sha256sum.txt
+          cat sha256sum.txt
+
+      - name: Sign Checksums with GPG
+        if: env.GPG_PRIVATE_KEY != ''
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          cd distbin
+          # Import GPG key
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          # Sign the checksums file
+          echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 --armor --detach-sign sha256sum.txt
+          # Verify signature was created
+          ls -la sha256sum.txt.asc
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref_type == 'tag'
+        with:
+          tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          make_latest: true
+          files: distbin/*
+          body: |
+            ## Release ${{ github.ref_name }}
+
+            ### Downloads
+            Download the binary for your platform from the assets below.
+
+            ### Checksums
+            All binaries have been checksummed. See `sha256sum.txt` for verification.
+            The checksums file is GPG-signed (see `sha256sum.txt.asc`).
+
+            ### Verification
+            ```bash
+            # Verify checksum
+            sha256sum -c sha256sum.txt
+
+            # Verify GPG signature (if GPG key is available)
+            gpg --verify sha256sum.txt.asc sha256sum.txt
+            ```
+          token: ${{ secrets.GITHUB_TOKEN }}
