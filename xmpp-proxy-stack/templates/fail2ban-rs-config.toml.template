@@ -1,0 +1,56 @@
+# fail2ban-rs configuration (generated from template)
+# Variables: $FAIL2BAN_MAX_RETRY, $FAIL2BAN_BAN_TIME, $FAIL2BAN_FIND_TIME
+
+[global]
+ban_count_decay = "30d"
+
+# XMPP C2S Authentication Failures
+[jail.xmpp-auth]
+enabled = true
+log_path = "/logs/prosody.log"
+filter = [
+    'Failed authentication for .* from <HOST>',
+    'c2s[a-f0-9]+ Failed SASL authentication .* IP: <HOST>',
+]
+max_retry = ${FAIL2BAN_MAX_RETRY}
+find_time = "${FAIL2BAN_FIND_TIME}"
+ban_time = "${FAIL2BAN_BAN_TIME}"
+backend = "nftables"
+port = ["5222", "5223"]
+protocol = "tcp"
+
+# Ban time escalation for repeat offenders
+bantime_increment = true
+bantime_multipliers = [1, 2, 4, 8, 16, 32, 64]
+bantime_maxtime = "1w"
+
+# Never ban localhost or private IPs
+ignoreip = ["127.0.0.1/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+
+# XMPP S2S Abuse (connection flooding)
+[jail.xmpp-s2s-abuse]
+enabled = true
+log_path = "/logs/prosody.log"
+filter = [
+    's2s[a-f0-9]+ Connection rate limit exceeded for <HOST>',
+    's2sin[a-f0-9]+ Received invalid XML from <HOST>',
+]
+max_retry = 10
+find_time = "5m"
+ban_time = "2h"
+backend = "nftables"
+port = ["5269"]
+protocol = "tcp"
+
+# XMPP Stanza Flooding
+[jail.xmpp-stanza-flood]
+enabled = true
+log_path = "/logs/xmpp-proxy.log"
+filter = [
+    'Stanza size limit exceeded.*from <HOST>',
+    'Rate limit exceeded.*<HOST>',
+]
+max_retry = 3
+find_time = "1m"
+ban_time = "30m"
+backend = "nftables"
