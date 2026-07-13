@@ -134,31 +134,40 @@ jobs:
             os: windows-latest
             target: x86_64-pc-windows-gnu
             build-args: "--release"
-    if: |
-      github.event_name != 'workflow_dispatch' ||
-      inputs.target == 'all' ||
-      matrix.platform.target == inputs.target
 
     steps:
+      - name: Check if should build this target
+        id: should_build
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" != "workflow_dispatch" ]] || \
+             [[ "${{ inputs.target || 'all' }}" == "all" ]] || \
+             [[ "${{ inputs.target }}" == "${{ matrix.platform.target }}" ]]; then
+            echo "build=true" >> $GITHUB_OUTPUT
+          else
+            echo "build=false" >> $GITHUB_OUTPUT
+          fi
       - name: Linux - Install Build Dependencies
-        if: contains(matrix.platform.target, 'linux') && !contains(matrix.platform.target, 'android')
+        if: steps.should_build.outputs.build == 'true' && contains(matrix.platform.target, 'linux') && !contains(matrix.platform.target, 'android')
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools
 
       - name: Android - Install Build Dependencies
-        if: contains(matrix.platform.target, 'android')
+        if: steps.should_build.outputs.build == 'true' && contains(matrix.platform.target, 'android')
         run: |
           sudo apt-get update
           sudo apt-get install -y android-libunwind android-libunwind-dev libunwind-dev musl-tools llvm-14 clang llvm
 
       - name: Checkout Repository
+        if: steps.should_build.outputs.build == 'true'
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: Update Version from Git Tag
+        if: steps.should_build.outputs.build == 'true'
         shell: bash
         run: |
           # Extract version from git tag (remove 'v' prefix if present)
@@ -176,26 +185,28 @@ jobs:
           fi
 
       - name: Install Rust Toolchain
+        if: steps.should_build.outputs.build == 'true'
         uses: dtolnay/rust-toolchain@nightly
         with:
           targets: ${{ matrix.platform.target }}
 
       - name: Install cross for cross-compilation
-        if: matrix.platform.os != 'windows-latest'
+        if: steps.should_build.outputs.build == 'true' && matrix.platform.os != 'windows-latest'
         run: |
           cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build Binary (cross) - Linux/Android
-        if: matrix.platform.os != 'windows-latest'
+        if: steps.should_build.outputs.build == 'true' && matrix.platform.os != 'windows-latest'
         run: |
           cross +nightly build ${{ matrix.platform.build-args }} --target ${{ matrix.platform.target }}
 
       - name: Build Binary (cargo) - Windows
-        if: matrix.platform.os == 'windows-latest'
+        if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'windows-latest'
         run: |
           cargo +nightly build ${{ matrix.platform.build-args }} --target ${{ matrix.platform.target }}
 
       - name: Upload Binary Artifact
+        if: steps.should_build.outputs.build == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: xmpp-proxy-${{ matrix.platform.target }}
