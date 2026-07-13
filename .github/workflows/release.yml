@@ -67,11 +67,11 @@ jobs:
 
           - name: Linux i586 GNU
             target: i586-unknown-linux-gnu
-            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-ring"
+            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-aws-lc-rs"
 
           - name: Linux i586 musl
             target: i586-unknown-linux-musl
-            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-ring"
+            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-aws-lc-rs"
 
           # Linux aarch64
           - name: Linux aarch64 GNU
