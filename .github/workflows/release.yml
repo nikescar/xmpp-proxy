@@ -7,6 +7,34 @@ on:
     branches:
       - test
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Build target (leave empty for all targets)'
+        required: false
+        type: choice
+        options:
+          - all
+          - x86_64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+          - i686-unknown-linux-gnu
+          - i686-unknown-linux-musl
+          - i586-unknown-linux-gnu
+          - i586-unknown-linux-musl
+          - aarch64-unknown-linux-gnu
+          - aarch64-unknown-linux-musl
+          - armv7-unknown-linux-gnueabihf
+          - armv7-unknown-linux-musleabihf
+          - arm-unknown-linux-gnueabi
+          - arm-unknown-linux-gnueabihf
+          - arm-unknown-linux-musleabi
+          - arm-unknown-linux-musleabihf
+          - x86_64-linux-android
+          - i686-linux-android
+          - aarch64-linux-android
+          - armv7-linux-androideabi
+          - arm-linux-androideabi
+          - x86_64-pc-windows-gnu
+        default: 'all'
 
 env:
   RUST_VERSION: nightly
@@ -28,22 +56,22 @@ jobs:
             target: x86_64-unknown-linux-musl
             build-args: "--release"
 
-          # Linux i686/i586
+          # Linux i686/i586 - NOTE: 32-bit platforms require --no-default-features to disable QUIC (fastbloom AtomicU64 issue)
           - name: Linux i686 GNU
             target: i686-unknown-linux-gnu
-            build-args: "--release"
+            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-ring"
 
           - name: Linux i686 musl
             target: i686-unknown-linux-musl
-            build-args: "--release"
+            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-ring"
 
           - name: Linux i586 GNU
             target: i586-unknown-linux-gnu
-            build-args: "--release"
+            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-ring"
 
           - name: Linux i586 musl
             target: i586-unknown-linux-musl
-            build-args: "--release"
+            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-ring"
 
           # Linux aarch64
           - name: Linux aarch64 GNU
@@ -57,46 +85,37 @@ jobs:
           # Linux armv7
           - name: Linux armv7 GNUhf
             target: armv7-unknown-linux-gnueabihf
-            build-args: "--release"
+            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-ring"
 
           - name: Linux armv7 muslhf
             target: armv7-unknown-linux-musleabihf
-            build-args: "--release"
+            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-ring"
 
           # Linux arm
           - name: Linux arm GNUeabi
             target: arm-unknown-linux-gnueabi
-            build-args: "--release"
+            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-ring"
 
           - name: Linux arm GNUhf
             target: arm-unknown-linux-gnueabihf
-            build-args: "--release"
+            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-ring"
 
           - name: Linux arm musleabi
             target: arm-unknown-linux-musleabi
-            build-args: "--release"
+            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-ring"
 
           - name: Linux arm muslhf
             target: arm-unknown-linux-musleabihf
-            build-args: "--release"
+            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,systemd,tls-ring"
 
-          # Linux armv5te
-          - name: Linux armv5te GNUeabi
-            target: armv5te-unknown-linux-gnueabi
-            build-args: "--release"
-
-          - name: Linux armv5te musleabi
-            target: armv5te-unknown-linux-musleabi
-            build-args: "--release"
-
-          # Android
+          # Android - 32-bit Android builds also need QUIC disabled
           - name: Android x86_64
             target: x86_64-linux-android
             build-args: "--release"
 
           - name: Android i686
             target: i686-linux-android
-            build-args: "--release"
+            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,tls-ring"
 
           - name: Android aarch64
             target: aarch64-linux-android
@@ -104,17 +123,21 @@ jobs:
 
           - name: Android armv7
             target: armv7-linux-androideabi
-            build-args: "--release"
+            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,tls-ring"
 
           - name: Android arm
             target: arm-linux-androideabi
-            build-args: "--release"
+            build-args: "--release --no-default-features --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,tls,websocket,logging,tls-ca-roots-native,tls-ring"
 
           # Windows
           - name: Windows x86_64
             os: windows-latest
             target: x86_64-pc-windows-gnu
             build-args: "--release"
+    if: |
+      github.event_name != 'workflow_dispatch' ||
+      inputs.target == 'all' ||
+      matrix.platform.target == inputs.target
 
     steps:
       - name: Linux - Install Build Dependencies
