@@ -158,32 +158,17 @@ jobs:
           targets: ${{ matrix.platform.target }}
 
       - name: Install cross for cross-compilation
-        if: |
-          contains(matrix.platform.target, 'android') ||
-          contains(matrix.platform.target, 'musl') ||
-          contains(matrix.platform.target, 'gnueabi') ||
-          contains(matrix.platform.target, 'i586') ||
-          contains(matrix.platform.target, 'i686') && !contains(matrix.platform.os, 'windows')
+        if: matrix.platform.os != 'windows-latest'
         run: |
           cargo install cross --git https://github.com/cross-rs/cross
 
-      - name: Build Binary (cross)
-        if: |
-          contains(matrix.platform.target, 'android') ||
-          contains(matrix.platform.target, 'musl') ||
-          contains(matrix.platform.target, 'gnueabi') ||
-          contains(matrix.platform.target, 'i586') ||
-          contains(matrix.platform.target, 'i686') && !contains(matrix.platform.os, 'windows')
+      - name: Build Binary (cross) - Linux/Android
+        if: matrix.platform.os != 'windows-latest'
         run: |
           cross +nightly build ${{ matrix.platform.build-args }} --target ${{ matrix.platform.target }}
 
-      - name: Build Binary (cargo)
-        if: |
-          !contains(matrix.platform.target, 'android') &&
-          !contains(matrix.platform.target, 'musl') &&
-          !contains(matrix.platform.target, 'gnueabi') &&
-          !contains(matrix.platform.target, 'i586') &&
-          (!contains(matrix.platform.target, 'i686') || contains(matrix.platform.os, 'windows'))
+      - name: Build Binary (cargo) - Windows
+        if: matrix.platform.os == 'windows-latest'
         run: |
           cargo +nightly build ${{ matrix.platform.build-args }} --target ${{ matrix.platform.target }}
 
