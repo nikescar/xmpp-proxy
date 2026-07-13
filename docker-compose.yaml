@@ -1,0 +1,56 @@
+# XMPP Docker Compose
+# Base configuration - do not edit directly.
+# Put customizations in docker-compose.override.yaml instead.
+
+services:
+  prosody:
+    image: prosodyim/prosody:13.0
+    container_name: prosody
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PROSODY_ADMINS: ${XMPP_ADMIN:-admin@${XMPP_DOMAIN}}
+      PROSODY_VIRTUAL_HOSTS: ${XMPP_DOMAIN}
+      PROSODY_LOGLEVEL: ${PROSODY_LOGLEVEL:-info}
+      PROSODY_STORAGE: internal
+      PROSODY_ENABLE_MODULES: mam,carbons,csi_simple,ping,admin_adhoc
+      PROSODY_CERTIFICATES: /certs
+      PROSODY_RETENTION_DAYS: ${PROSODY_RETENTION_DAYS:-90}
+    volumes:
+      - /srv/xmpp/prosody:/var/lib/prosody
+      - /srv/xmpp/certs:/certs:ro
+      - /srv/xmpp/logs/prosody:/var/log/prosody
+      - ./xmpp-proxy-stack/templates/prosody-proxy.cfg.lua:/etc/prosody/conf.d/proxy.cfg.lua:ro
+    networks:
+      - xmpp-internal
+    healthcheck:
+      test: ["CMD", "prosodyctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  xmpp-proxy-stack:
+    build:
+      context: ./xmpp-proxy-stack
+      args:
+        XMPP_PROXY_VERSION: ${XMPP_PROXY_VERSION:-latest}
+        FAIL2BAN_RS_VERSION: ${FAIL2BAN_RS_VERSION:-latest}
+    container_name: xmpp-proxy-stack
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    env_file: .env
+    volumes:
+      - /srv/xmpp/certs:/certs
+      - /srv/xmpp/logs:/logs
+      - /srv/xmpp/fail2ban:/var/lib/fail2ban-rs
+      - /srv/xmpp/acme:/var/lib/acme
+    depends_on:
+      prosody:
+        condition: service_healthy
+
+networks:
+  xmpp-internal:
+    driver: bridge

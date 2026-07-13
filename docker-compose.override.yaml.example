@@ -1,0 +1,33 @@
+# docker-compose.override.yaml.example
+# Copy this file to docker-compose.override.yaml and customize as needed.
+# This file is loaded automatically by docker compose.
+
+services:
+  prosody:
+    # Example: Mount custom Prosody configuration
+    # volumes:
+    #   - ./custom-prosody.cfg.lua:/etc/prosody/prosody.cfg.lua:ro
+
+    # Example: Use external PostgreSQL database
+    # environment:
+    #   PROSODY_STORAGE: sql
+    #   PROSODY_SQL_DRIVER: postgres
+    #   PROSODY_SQL_DB: prosody
+    #   PROSODY_SQL_USERNAME: prosody
+    #   PROSODY_SQL_PASSWORD: secret
+    #   PROSODY_SQL_HOST: postgres.example.com
+
+    # Example: Enable web admin interface
+    # environment:
+    #   PROSODY_ENABLE_MODULES: mam,carbons,csi_simple,ping,admin_adhoc,admin_web
+    # ports:
+    #   - "5280:5280"  # Admin web interface
+
+  xmpp-proxy-stack:
+    # Example: Add custom fail2ban jails
+    # volumes:
+    #   - ./custom-jails:/etc/fail2ban-rs/jail.d:ro
+
+    # Example: Use external certificates (skip ACME)
+    # volumes:
+    #   - /etc/letsencrypt/live/chat.example.com:/certs:ro
