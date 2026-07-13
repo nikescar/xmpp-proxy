@@ -1,11 +1,20 @@
-/target/
-/target
-**/*.rs.bk
-.idea
-**/*.kate-swp
-**/out/
-**/core.*
-fuzz/target/
-*.txt
-conflict/
-*.test.toml
+# Environment
+.env
+.env.local
+
+# Docker
+docker-compose.override.yaml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
