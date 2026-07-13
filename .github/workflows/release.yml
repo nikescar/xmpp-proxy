@@ -38,6 +38,9 @@ env:
   RUST_VERSION: nightly
   BIN_NAME: "xmpp-proxy"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build - ${{ matrix.platform.name }}
