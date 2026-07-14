@@ -46,6 +46,12 @@ services:
         FAIL2BAN_RS_VERSION: ${FAIL2BAN_RS_VERSION:-latest}
     container_name: xmpp-proxy-stack
     restart: unless-stopped
+    # Uses host networking for PROXY protocol support
+    # Ports won't show in 'docker ps' - use 'ss -tnlup' to see listening ports:
+    #   5222/tcp  - XMPP C2S (StartTLS)
+    #   5223/tcp  - XMPP C2S (Direct TLS)
+    #   5269/tcp  - XMPP S2S (Server-to-Server)
+    #   443/udp   - XMPP over QUIC
     network_mode: host
     cap_add:
       - NET_ADMIN
