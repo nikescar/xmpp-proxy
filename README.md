@@ -162,6 +162,70 @@ To build a reverse proxy only, but supporting all of STARTTLS/TLS/QUIC, run: `ca
    [code.moparisthebest.com](https://code.moparisthebest.com/moparisthebest/xmpp-proxy) or send me a patch via email,
    XMPP, fediverse, or carrier pigeon.
 
+#### Docker Compose Deployment
+
+A complete Docker Compose stack is included that provides:
+  * **Prosody XMPP server** (prosodyim/prosody:13.0) with MAM, carbons, and web admin enabled
+  * **xmpp-proxy** (reverse proxy and outgoing proxy for STARTTLS/TLS/QUIC/WebSocket support)
+  * **nginx** (ACME HTTP-01 challenge handling for Let's Encrypt)
+  * **fail2ban-rs** (rate limiting and abuse protection)
+  * **supervisord** (process management for the proxy stack)
+  * Automatic TLS certificate management with acmetool
+  * PROXY protocol support for preserving client IPs
+  * WebSocket support on port 5280
+  * Full backup and restore scripts
+
+###### Quick Start
+
+1. Copy the example environment file and edit it:
+   ```
+   cp .env.example .env
+   nano .env
+   ```
+   Set at minimum: `XMPP_DOMAIN`, `ACME_EMAIL`
+
+2. Start the stack:
+   ```
+   docker compose up -d
+   ```
+
+3. The stack exposes:
+   * `5222/tcp` - XMPP C2S (STARTTLS)
+   * `5223/tcp` - XMPP C2S (Direct TLS)
+   * `5269/tcp` - XMPP S2S (Server-to-Server)
+   * `443/udp` - XMPP over QUIC
+   * `5280/tcp` - HTTP/WebSocket (for BOSH and WebSocket clients)
+   * `80/tcp` - HTTP (ACME challenge only)
+
+4. Data persists in `/srv/xmpp/`:
+   * `prosody/` - Prosody data (accounts, messages, etc.)
+   * `certs/` - TLS certificates
+   * `logs/` - All service logs
+   * `fail2ban/` - fail2ban-rs database
+   * `acme/` - acmetool state
+
+5. Backup and restore:
+   ```
+   ./scripts/backup.sh      # Creates timestamped backup in /srv/xmpp/backups/
+   ./scripts/restore.sh /path/to/backup.tar.gz
+   ```
+
+###### Architecture
+
+The Docker deployment uses two containers:
+  * **prosody** - Runs Prosody XMPP server on localhost-only ports with PROXY protocol support enabled
+  * **xmpp-proxy-stack** - Bundles xmpp-proxy, nginx, fail2ban-rs, and supervisord using host networking for PROXY protocol support
+
+Prosody listens on localhost:15222 (C2S) and localhost:15269 (S2S). xmpp-proxy terminates TLS on the public ports, sends the PROXY protocol header, and forwards to Prosody. This preserves the real client IP for logging and rate limiting.
+
+###### Customization
+
+Put local overrides in `docker-compose.override.yaml` (see `docker-compose.override.yaml.example`). Common customizations:
+  * Change Prosody modules: set `PROSODY_ENABLE_MODULES` in `.env`
+  * Adjust log levels: `PROSODY_LOGLEVEL`, `XMPP_PROXY_LOG_LEVEL`
+  * Change data paths: modify volume mounts in override file
+  * Add custom Prosody modules: drop them in `./prosody-modules/` directory
+
 ####  License
 GNU/AGPLv3 - Check LICENSE.md for details
 
