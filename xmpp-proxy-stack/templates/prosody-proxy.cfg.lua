@@ -9,7 +9,10 @@ pidfile = "/var/run/prosody/prosody.pid"
 plugin_paths = { "/usr/lib/prosody/community" }
 
 modules_enabled = {
-    "net_proxy";  -- Parse PROXY protocol v1/v2 headers to extract real client IP
+    "net_proxy";     -- Parse PROXY protocol v1/v2 headers to extract real client IP
+    "admin_shell";   -- Enable prosodyctl shell access
+    "http";          -- HTTP server for web admin
+    "admin_web2";    -- Web admin interface (Prosody 13.0 compatible)
 }
 
 -- Configure which ports expect PROXY protocol headers
@@ -33,3 +36,10 @@ allow_unencrypted_plain_auth = true
 -- Real client IPs are now preserved via mod_net_proxy
 -- Prosody logs will show actual client IPs, not 127.0.0.1
 -- fail2ban-rs can now correctly identify and ban attackers
+
+-- HTTP configuration for web admin
+http_ports = { 5280 }
+http_interfaces = { "*", "::" }
+
+-- Admin shell socket path (for prosodyctl shell command)
+admin_socket = "/var/run/prosody/prosody.sock"

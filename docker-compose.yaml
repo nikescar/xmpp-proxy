@@ -13,7 +13,7 @@ services:
       PROSODY_VIRTUAL_HOSTS: ${XMPP_DOMAIN}
       PROSODY_LOGLEVEL: ${PROSODY_LOGLEVEL:-info}
       PROSODY_STORAGE: internal
-      PROSODY_ENABLE_MODULES: mam,carbons,csi_simple,ping,admin_adhoc
+      PROSODY_ENABLE_MODULES: mam,carbons,csi_simple,ping,admin_adhoc,admin_shell,http,admin_web2
       PROSODY_CERTIFICATES: /certs
       PROSODY_RETENTION_DAYS: ${PROSODY_RETENTION_DAYS:-90}
     volumes:
@@ -26,7 +26,9 @@ services:
       # Expose on non-standard ports on localhost only so xmpp-proxy can connect
       - "127.0.0.1:15222:5222"  # C2S
       - "127.0.0.1:15269:5269"  # S2S
-      - "127.0.0.1:15280:5280"  # HTTP/WebSocket
+      - "127.0.0.1:15280:5280"  # HTTP (internal only for xmpp-proxy)
+      # Expose WebSocket port publicly for WebSocket clients
+      - "0.0.0.0:5280:5280"     # HTTP/WebSocket (public)
     networks:
       - xmpp-internal
     healthcheck:
