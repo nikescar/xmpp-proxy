@@ -9,3 +9,6 @@ fuzz/target/
 *.txt
 conflict/
 *.test.toml
+.env
+docker-compose.override.yaml
+prosody-modules/
