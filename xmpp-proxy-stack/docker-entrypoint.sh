@@ -34,19 +34,22 @@ envsubst < /etc/templates/fail2ban-rs-config.toml.template \
 if [ ! -f /certs/fullchain.pem ]; then
     echo "No certificates found. Running ACME setup..."
 
-    # Configure acmetool to auto-accept Terms of Service
+    # Configure acmetool to auto-accept Terms of Service and use webroot
     mkdir -p /var/lib/acme/conf
     cat > /var/lib/acme/conf/responses <<ACME_EOF
 "acme-enter-email": "$ACME_EMAIL"
 "acme-agreement:https://letsencrypt.org/documents/LE-SA-v1.8-July-06-2026.pdf": true
 ACME_EOF
 
+    # Ensure webroot directory exists
+    mkdir -p /var/run/acme/acme-challenge
+
     echo "Requesting certificate for $XMPP_DOMAIN..."
 
-    # Start nginx for HTTP-01 challenge
+    # Start nginx for HTTP-01 challenge (keep it running)
     nginx
 
-    # Request certificate
+    # Request certificate with webroot mode
     if ! acmetool want "$XMPP_DOMAIN"; then
         echo "ERROR: ACME certificate acquisition failed"
         echo ""
@@ -64,17 +67,22 @@ ACME_EOF
             -days 365 -subj "/CN=$XMPP_DOMAIN"
 
         echo "WARNING: Using self-signed certificate. Clients will show warnings."
+
+        # Stop nginx since we're using self-signed cert
+        nginx -s stop 2>/dev/null || true
     else
         # Symlink acmetool certs to shared location
         ln -sf "/var/lib/acme/live/$XMPP_DOMAIN/fullchain" /certs/fullchain.pem
         ln -sf "/var/lib/acme/live/$XMPP_DOMAIN/privkey" /certs/privkey.pem
         echo "Certificate successfully obtained!"
-    fi
 
-    # Stop nginx (will be restarted if needed)
-    nginx -s stop 2>/dev/null || true
+        # Keep nginx running for renewals
+        echo "Keeping nginx running for certificate renewals"
+    fi
 else
     echo "Certificates found in /certs/"
+    # Start nginx for renewals even if cert exists
+    nginx
 fi
 
 # Setup cron for certificate renewal

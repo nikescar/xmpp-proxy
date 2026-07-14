@@ -13,7 +13,7 @@ services:
       PROSODY_VIRTUAL_HOSTS: ${XMPP_DOMAIN}
       PROSODY_LOGLEVEL: ${PROSODY_LOGLEVEL:-info}
       PROSODY_STORAGE: internal
-      PROSODY_ENABLE_MODULES: mam,carbons,csi_simple,ping,admin_adhoc,admin_shell,http,admin_web2
+      PROSODY_ENABLE_MODULES: mam,carbons,csi_simple,ping,admin_adhoc,admin_shell,http,admin_web2,bosh
       PROSODY_CERTIFICATES: /certs
       PROSODY_RETENTION_DAYS: ${PROSODY_RETENTION_DAYS:-90}
     volumes:
@@ -48,6 +48,7 @@ services:
     restart: unless-stopped
     # Uses host networking for PROXY protocol support
     # Ports won't show in 'docker ps' - use 'ss -tnlup' to see listening ports:
+    #   80/tcp    - HTTP (for ACME challenge)
     #   5222/tcp  - XMPP C2S (StartTLS)
     #   5223/tcp  - XMPP C2S (Direct TLS)
     #   5269/tcp  - XMPP S2S (Server-to-Server)
