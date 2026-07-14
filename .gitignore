@@ -5,6 +5,9 @@
 # Docker
 docker-compose.override.yaml
 
+# Prosody community modules (cloned at setup time, not committed)
+prosody-modules/
+
 # IDE
 .vscode/
 .idea/

@@ -1,56 +1,25 @@
-# xmpp-proxy configuration (generated from template)
-# Variables: $PROSODY_HOST
+# xmpp-proxy configuration
+# Note: xmpp-proxy-stack uses host networking, prosody ports are exposed on localhost
 
 # Incoming connections (reverse proxy)
+incoming_listen = [
+    # C2S STARTTLS (port 5222)
+    { local_addr = "[::]:5222", client_addr = "127.0.0.1:15222", proxy_proto = true, starttls = true, tls_cert = "/certs/fullchain.pem", tls_key = "/certs/privkey.pem", max_stanza_size_bytes = 262144 },
 
-# C2S STARTTLS (port 5222)
-[[in]]
-local_addr = "[::]:5222"
-client_addr = "${PROSODY_HOST}:5222"
-proxy_proto = true
-starttls = true
-tls_cert = "/certs/fullchain.pem"
-tls_key = "/certs/privkey.pem"
-max_stanza_size_bytes = 262144
+    # C2S Direct TLS (legacy port 5223)
+    { local_addr = "[::]:5223", client_addr = "127.0.0.1:15222", proxy_proto = true, tls_cert = "/certs/fullchain.pem", tls_key = "/certs/privkey.pem", max_stanza_size_bytes = 262144 },
 
-# C2S Direct TLS (legacy port 5223)
-[[in]]
-local_addr = "[::]:5223"
-client_addr = "${PROSODY_HOST}:5222"
-proxy_proto = true
-tls_cert = "/certs/fullchain.pem"
-tls_key = "/certs/privkey.pem"
-max_stanza_size_bytes = 262144
+    # S2S (port 5269)
+    { local_addr = "[::]:5269", client_addr = "127.0.0.1:15269", proxy_proto = true, starttls = true, tls_cert = "/certs/fullchain.pem", tls_key = "/certs/privkey.pem", max_stanza_size_bytes = 262144 },
 
-# S2S (port 5269)
-[[in]]
-local_addr = "[::]:5269"
-client_addr = "${PROSODY_HOST}:5269"
-proxy_proto = true
-starttls = true
-tls_cert = "/certs/fullchain.pem"
-tls_key = "/certs/privkey.pem"
-max_stanza_size_bytes = 262144
+    # WebSocket Secure (port 5443)
+    { local_addr = "[::]:5443", client_addr = "127.0.0.1:15280", proxy_proto = true, websocket = true, tls_cert = "/certs/fullchain.pem", tls_key = "/certs/privkey.pem", max_stanza_size_bytes = 524288 },
+]
 
-# WebSocket Secure (port 5443)
-[[in]]
-local_addr = "[::]:5443"
-client_addr = "${PROSODY_HOST}:5280"
-websocket = true
-proxy_proto = true
-tls_cert = "/certs/fullchain.pem"
-tls_key = "/certs/privkey.pem"
-max_stanza_size_bytes = 524288
-
-# QUIC (port 443)
-[[in]]
-local_addr = "[::]:443"
-client_addr = "${PROSODY_HOST}:5222"
-quic = true
-proxy_proto = true
-tls_cert = "/certs/fullchain.pem"
-tls_key = "/certs/privkey.pem"
-max_stanza_size_bytes = 262144
+# QUIC support (experimental)
+quic_listen = [
+    { local_addr = "[::]:443", client_addr = "127.0.0.1:15222", proxy_proto = true, tls_cert = "/certs/fullchain.pem", tls_key = "/certs/privkey.pem", max_stanza_size_bytes = 262144 },
+]
 
 # Logging
 log_level = "info"

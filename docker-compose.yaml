@@ -21,6 +21,12 @@ services:
       - /srv/xmpp/certs:/certs:ro
       - /srv/xmpp/logs/prosody:/var/log/prosody
       - ./xmpp-proxy-stack/templates/prosody-proxy.cfg.lua:/etc/prosody/conf.d/proxy.cfg.lua:ro
+      - ./prosody-modules:/usr/lib/prosody/community:ro
+    ports:
+      # Expose on non-standard ports on localhost only so xmpp-proxy can connect
+      - "127.0.0.1:15222:5222"  # C2S
+      - "127.0.0.1:15269:5269"  # S2S
+      - "127.0.0.1:15280:5280"  # HTTP/WebSocket
     networks:
       - xmpp-internal
     healthcheck:

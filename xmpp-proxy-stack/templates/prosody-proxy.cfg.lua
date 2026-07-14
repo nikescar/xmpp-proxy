@@ -1,23 +1,35 @@
 -- Prosody PROXY protocol configuration
 -- This file is mounted at /etc/prosody/conf.d/proxy.cfg.lua
 
--- Enable PROXY protocol support
+-- Add pidfile for health checks
+pidfile = "/var/run/prosody/prosody.pid"
+
+-- PROXY protocol support via mod_net_proxy from prosody-modules
+-- Community modules mounted at: /usr/lib/prosody/community
+plugin_paths = { "/usr/lib/prosody/community" }
+
 modules_enabled = {
-    "net_proxy";  -- mod_net_proxy for PROXY protocol
+    "net_proxy";  -- Parse PROXY protocol v1/v2 headers to extract real client IP
 }
 
+-- Configure which ports expect PROXY protocol headers
 proxy_port_mappings = {
     [5222] = "c2s",  -- Client-to-server connections
     [5269] = "s2s"   -- Server-to-server connections
 }
 
--- Trust connections from xmpp-proxy as already secure
-proxy_secure = true
+-- Disable regular c2s/s2s ports (mod_net_proxy will handle them)
+c2s_ports = {}
+s2s_ports = {}
 
--- Don't require encryption (xmpp-proxy already handled TLS)
+-- Don't require encryption (xmpp-proxy already handled TLS termination)
 c2s_require_encryption = false
 s2s_require_encryption = false
 s2s_secure_auth = false
 
--- Allow plaintext auth since connection is already secure
+-- Allow plaintext auth since connection is already secure (TLS at xmpp-proxy)
 allow_unencrypted_plain_auth = true
+
+-- Real client IPs are now preserved via mod_net_proxy
+-- Prosody logs will show actual client IPs, not 127.0.0.1
+-- fail2ban-rs can now correctly identify and ban attackers

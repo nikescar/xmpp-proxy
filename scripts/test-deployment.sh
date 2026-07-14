@@ -54,6 +54,10 @@ test_check "Prosody daemon responding" \
 test_check "fail2ban-rs responding" \
     "docker compose exec -T xmpp-proxy-stack fail2ban-rs stats"
 
+# PROXY Protocol Test
+test_check "PROXY protocol (mod_net_proxy) loaded" \
+    "docker compose logs prosody | grep -q \"Activated service 'proxy'\""
+
 # Certificate Tests
 test_check "Certificate files exist" \
     "[ -f /srv/xmpp/certs/fullchain.pem ] && [ -f /srv/xmpp/certs/privkey.pem ]"
