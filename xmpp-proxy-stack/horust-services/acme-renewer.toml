@@ -1,0 +1,13 @@
+command = "/app/acme.sh --cron --home /app --config-home /etc/acme.sh/default"
+start-delay = "86400s"
+stdout = "/logs/acme-renewer-stdout.log"
+stderr = "/logs/acme-renewer-stderr.log"
+
+[restart]
+strategy = "on-failure"
+backoff = "3600s"
+attempts = 24
+
+[termination]
+signal = "TERM"
+wait = "30s"

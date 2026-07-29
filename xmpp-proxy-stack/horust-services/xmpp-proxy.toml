@@ -1,0 +1,14 @@
+command = "/usr/local/bin/xmpp-proxy /etc/xmpp-proxy/xmpp-proxy.toml"
+start-delay = "2s"
+start-after = ["nginx.toml"]
+stdout = "/logs/xmpp-proxy-stdout.log"
+stderr = "/logs/xmpp-proxy-stderr.log"
+
+[restart]
+strategy = "always"
+backoff = "5s"
+attempts = 0
+
+[termination]
+signal = "TERM"
+wait = "15s"

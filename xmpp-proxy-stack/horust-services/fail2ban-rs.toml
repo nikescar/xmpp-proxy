@@ -1,0 +1,15 @@
+command = "/usr/local/bin/fail2ban-rs --config /etc/fail2ban-rs/config.toml"
+start-delay = "3s"
+start-after = ["xmpp-proxy.toml"]
+stdout = "/logs/fail2ban-rs-stdout.log"
+stderr = "/logs/fail2ban-rs-stderr.log"
+user = "root"
+
+[restart]
+strategy = "always"
+backoff = "10s"
+attempts = 0
+
+[termination]
+signal = "TERM"
+wait = "5s"
