@@ -41,9 +41,11 @@ services:
   xmpp-proxy-stack:
     build:
       context: ./xmpp-proxy-stack
+      dockerfile: Dockerfile.distroless
       args:
         XMPP_PROXY_VERSION: ${XMPP_PROXY_VERSION:-latest}
         FAIL2BAN_RS_VERSION: ${FAIL2BAN_RS_VERSION:-latest}
+        HORUST_VERSION: ${HORUST_VERSION:-0.1.8}
     container_name: xmpp-proxy-stack
     restart: unless-stopped
     # Uses host networking for PROXY protocol support
