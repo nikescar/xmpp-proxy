@@ -20,6 +20,23 @@ validate_location_path() {
     return 0
 }
 
+# Validate upstream URL
+validate_upstream_url() {
+    local url="$1"
+
+    if [ -z "$url" ]; then
+        echo "ERROR: Upstream URL cannot be empty" >&2
+        return 1
+    fi
+
+    if [[ ! "$url" =~ ^https?:// ]]; then
+        echo "ERROR: Upstream URL must start with http:// or https://" >&2
+        return 1
+    fi
+
+    return 0
+}
+
 # Main command dispatch (to be implemented)
 main() {
     echo "nginx-proxy-ctl placeholder"
