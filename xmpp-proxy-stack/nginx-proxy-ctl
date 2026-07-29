@@ -110,6 +110,51 @@ add_proxy() {
     return 0
 }
 
+# Remove a proxy location
+remove_proxy() {
+    local location="$1"
+
+    # Find config file by location hash
+    local hash=$(echo -n "$location" | md5sum | cut -d' ' -f1)
+    local config_file="$NGINX_CONF_DIR/proxy-$hash.conf"
+
+    if [ ! -f "$config_file" ]; then
+        echo "ERROR: Proxy for location $location not found" >&2
+        return 1
+    fi
+
+    # Delete config file
+    rm -f "$config_file"
+
+    # Reload nginx
+    $NGINX_BIN -s reload
+
+    echo "Proxy removed: $location"
+    return 0
+}
+
+# List all configured proxies
+list_proxies() {
+    local count=0
+
+    for config_file in "$NGINX_CONF_DIR"/proxy-*.conf; do
+        if [ -f "$config_file" ]; then
+            # Extract location and upstream from config
+            local location=$(grep -oP 'location \K[^ ]+' "$config_file" | head -1)
+            local upstream=$(grep -oP 'proxy_pass \K[^;]+' "$config_file" | head -1)
+
+            echo "$location -> $upstream"
+            ((count++))
+        fi
+    done
+
+    if [ $count -eq 0 ]; then
+        echo "No proxies configured"
+    fi
+
+    return 0
+}
+
 # Main command dispatch (to be implemented)
 main() {
     echo "nginx-proxy-ctl placeholder"
