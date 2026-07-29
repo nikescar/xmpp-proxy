@@ -37,6 +37,30 @@ validate_upstream_url() {
     return 0
 }
 
+# Generate nginx proxy config from template
+generate_proxy_config() {
+    local location="$1"
+    local upstream="$2"
+    local options="${3:-}"
+
+    local websocket_headers=""
+    local custom_headers=""
+
+    # Add websocket headers if enabled
+    if [[ "$options" == *"websocket"* ]]; then
+        websocket_headers="proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection \"upgrade\";"
+    fi
+
+    # Generate config from template
+    export LOCATION_PATH="$location"
+    export UPSTREAM_URL="$upstream"
+    export WEBSOCKET_HEADERS="$websocket_headers"
+    export CUSTOM_HEADERS="$custom_headers"
+
+    envsubst < "$TEMPLATE_FILE"
+}
+
 # Main command dispatch (to be implemented)
 main() {
     echo "nginx-proxy-ctl placeholder"
