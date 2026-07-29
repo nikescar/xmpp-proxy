@@ -1,0 +1,31 @@
+#!/bin/bash
+# nginx-proxy-ctl - Dynamic nginx proxy configuration manager
+
+set -euo pipefail
+
+# Validate location path
+validate_location_path() {
+    local path="$1"
+
+    if [ -z "$path" ]; then
+        echo "ERROR: Location path cannot be empty" >&2
+        return 1
+    fi
+
+    if [[ ! "$path" =~ ^/ ]]; then
+        echo "ERROR: Location path must start with /" >&2
+        return 1
+    fi
+
+    return 0
+}
+
+# Main command dispatch (to be implemented)
+main() {
+    echo "nginx-proxy-ctl placeholder"
+}
+
+# Only run main if executed directly (not sourced for tests)
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    main "$@"
+fi
