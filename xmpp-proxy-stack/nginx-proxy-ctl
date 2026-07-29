@@ -52,11 +52,15 @@ generate_proxy_config() {
     proxy_set_header Connection \"upgrade\";"
     fi
 
+    # Set default timeout if not provided
+    local timeout="${PROXY_TIMEOUT:-60s}"
+
     # Generate config from template
     export LOCATION_PATH="$location"
     export UPSTREAM_URL="$upstream"
     export WEBSOCKET_HEADERS="$websocket_headers"
     export CUSTOM_HEADERS="$custom_headers"
+    export PROXY_TIMEOUT="$timeout"
 
     envsubst < "$TEMPLATE_FILE"
 }
