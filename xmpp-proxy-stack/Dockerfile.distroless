@@ -1,0 +1,138 @@
+# Multi-stage Dockerfile for distroless xmpp-proxy-stack
+
+ARG XMPP_PROXY_VERSION=latest
+ARG FAIL2BAN_RS_VERSION=latest
+ARG HORUST_VERSION=0.1.8
+
+##
+## Stage 1: nginx-builder
+##
+FROM nginx:1.27.0 AS nginx-builder
+
+# This stage extracts nginx binary and dependencies from official image
+# We'll copy these into the final distroless image
+
+
+##
+## Stage 2: horust-builder
+##
+FROM alpine:latest AS horust-builder
+
+ARG HORUST_VERSION
+
+RUN apk add --no-cache curl
+
+WORKDIR /build
+
+# Download Horust binary from GitHub releases
+# Try aarch64 first, fall back to x86_64
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "aarch64" ]; then \
+        HORUST_ARCH="aarch64"; \
+    elif [ "$ARCH" = "x86_64" ]; then \
+        HORUST_ARCH="x86_64"; \
+    else \
+        echo "Unsupported architecture: $ARCH" >&2; \
+        exit 1; \
+    fi && \
+    echo "Downloading Horust v${HORUST_VERSION} for ${HORUST_ARCH}..." && \
+    curl -fsSL "https://github.com/FedericoPonzi/Horust/releases/download/v${HORUST_VERSION}/horust-${HORUST_ARCH}-unknown-linux-musl" \
+        -o /usr/local/bin/horust && \
+    chmod +x /usr/local/bin/horust && \
+    /usr/local/bin/horust --version
+
+
+##
+## Stage 3: acme-builder
+##
+FROM alpine:latest AS acme-builder
+
+RUN apk add --no-cache git openssl
+
+WORKDIR /build
+
+# Clone and install acme.sh
+RUN git clone https://github.com/acmesh-official/acme.sh.git && \
+    cd acme.sh && \
+    ./acme.sh --install \
+        --nocron \
+        --auto-upgrade 0 \
+        --home /app \
+        --config-home /etc/acme.sh/default && \
+    cd / && \
+    rm -rf /build
+
+##
+## Stage 4: binaries-builder
+##
+FROM debian:13-slim AS binaries-builder
+
+ARG XMPP_PROXY_VERSION
+ARG FAIL2BAN_RS_VERSION
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Download xmpp-proxy
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        XMPP_ARCH="x86_64"; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+        XMPP_ARCH="aarch64"; \
+    else \
+        echo "Unsupported architecture: $ARCH" >&2; \
+        exit 1; \
+    fi && \
+    if [ "$XMPP_PROXY_VERSION" = "latest" ]; then \
+        DOWNLOAD_URL="https://github.com/nikescar/xmpp-proxy/releases/latest/download/xmpp-proxy-${XMPP_ARCH}-unknown-linux-musl"; \
+    else \
+        DOWNLOAD_URL="https://github.com/nikescar/xmpp-proxy/releases/download/${XMPP_PROXY_VERSION}/xmpp-proxy-${XMPP_ARCH}-unknown-linux-musl"; \
+    fi && \
+    echo "Downloading xmpp-proxy from ${DOWNLOAD_URL}..." && \
+    curl -fsSL "$DOWNLOAD_URL" -o /usr/local/bin/xmpp-proxy && \
+    chmod +x /usr/local/bin/xmpp-proxy
+
+# Download fail2ban-rs
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        F2B_ARCH="x86_64"; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+        F2B_ARCH="aarch64"; \
+    else \
+        echo "Unsupported architecture: $ARCH" >&2; \
+        exit 1; \
+    fi && \
+    if [ "$FAIL2BAN_RS_VERSION" = "latest" ]; then \
+        DOWNLOAD_URL="https://github.com/aejimmi/fail2ban-rs/releases/latest/download/fail2ban-rs-${F2B_ARCH}-unknown-linux-musl"; \
+    else \
+        DOWNLOAD_URL="https://github.com/aejimmi/fail2ban-rs/releases/download/${FAIL2BAN_RS_VERSION}/fail2ban-rs-${F2B_ARCH}-unknown-linux-musl"; \
+    fi && \
+    echo "Downloading fail2ban-rs from ${DOWNLOAD_URL}..." && \
+    curl -fsSL "$DOWNLOAD_URL" -o /usr/local/bin/fail2ban-rs && \
+    chmod +x /usr/local/bin/fail2ban-rs
+
+##
+## Stage 5: tools-builder
+##
+FROM debian:13-slim AS tools-builder
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        busybox-static \
+        gettext-base && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy our scripts and configs
+COPY nginx-proxy-ctl /usr/local/bin/nginx-proxy-ctl
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+COPY horust-services/ /etc/horust/services/
+COPY templates/ /etc/templates/
+
+RUN chmod +x /usr/local/bin/nginx-proxy-ctl && \
+    chmod +x /docker-entrypoint.sh && \
+    cp /bin/busybox /bin/busybox-static
