@@ -65,6 +65,51 @@ generate_proxy_config() {
     envsubst < "$TEMPLATE_FILE"
 }
 
+# Configuration
+NGINX_CONF_DIR="${NGINX_CONF_DIR:-/etc/nginx/conf.d}"
+TEMPLATE_FILE="${TEMPLATE_FILE:-/etc/nginx/templates/location-proxy.conf.template}"
+NGINX_BIN="${NGINX_BIN:-/usr/sbin/nginx}"
+
+# Add a new proxy location
+add_proxy() {
+    local location="$1"
+    local upstream="$2"
+    local options="${3:-}"
+
+    # Validate inputs
+    validate_location_path "$location" || return 1
+    validate_upstream_url "$upstream" || return 1
+
+    # Check for duplicate location
+    local hash=$(echo -n "$location" | md5sum | cut -d' ' -f1)
+    local config_file="$NGINX_CONF_DIR/proxy-$hash.conf"
+
+    if [ -f "$config_file" ]; then
+        echo "ERROR: Proxy for location $location already exists" >&2
+        return 1
+    fi
+
+    # Generate config to temp file
+    local temp_file=$(mktemp)
+    generate_proxy_config "$location" "$upstream" "$options" > "$temp_file"
+
+    # Test nginx configuration
+    if ! $NGINX_BIN -t 2>&1 | grep -q "successful"; then
+        rm -f "$temp_file"
+        echo "ERROR: nginx configuration test failed" >&2
+        return 1
+    fi
+
+    # Move to final location
+    mv "$temp_file" "$config_file"
+
+    # Reload nginx
+    $NGINX_BIN -s reload
+
+    echo "Proxy added: $location -> $upstream"
+    return 0
+}
+
 # Main command dispatch (to be implemented)
 main() {
     echo "nginx-proxy-ctl placeholder"

@@ -1,0 +1,24 @@
+#!/bin/bash
+# Mock nginx for testing
+
+case "$1" in
+    -t)
+        if [ "${MOCK_NGINX_TEST_FAIL:-0}" = "1" ]; then
+            echo "nginx: configuration file /etc/nginx/nginx.conf test failed" >&2
+            exit 1
+        else
+            echo "nginx: configuration file /etc/nginx/nginx.conf test is successful"
+            exit 0
+        fi
+        ;;
+    -s)
+        if [ "$2" = "reload" ]; then
+            touch /tmp/nginx-reload-called
+            exit 0
+        fi
+        ;;
+    *)
+        echo "Mock nginx: unknown option $1" >&2
+        exit 1
+        ;;
+esac
