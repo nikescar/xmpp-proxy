@@ -247,3 +247,168 @@ Thanks [rxml](https://github.com/horazont/rxml) for afl-fuzz seeds
 [host-meta]: https://xmpp.org/extensions/xep-0156.html
 [host-meta2]: https://xmpp.org/extensions/inbox/host-meta-2.html
 [PROXY protocol]: https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt
+
+## Distroless Deployment (Recommended)
+
+The xmpp-proxy-stack now uses a hardened distroless base image for improved security.
+
+### Features
+
+- **Minimal Attack Surface**: Based on `gcr.io/distroless/base-debian13` with no shell or package manager
+- **Process Supervision**: Horust manages nginx, xmpp-proxy, fail2ban-rs, and acme.sh
+- **Automated Certificates**: acme.sh handles SSL/TLS certificate acquisition and renewal
+- **Dynamic Proxying**: nginx-proxy-ctl CLI for adding/removing reverse proxy configurations at runtime
+
+### Quick Start
+
+1. Configure environment variables:
+```bash
+cp .env.example .env
+nano .env  # Set XMPP_DOMAIN and ACME_EMAIL
+```
+
+2. Build and start:
+```bash
+docker-compose build xmpp-proxy-stack
+docker-compose up -d
+```
+
+3. Verify services:
+```bash
+docker logs xmpp-proxy-stack
+docker exec xmpp-proxy-stack /bin/busybox ps aux
+```
+
+### Dynamic Nginx Proxy Configuration
+
+Add HTTP/HTTPS reverse proxy locations dynamically:
+
+```bash
+# Add a proxy
+docker exec xmpp-proxy-stack nginx-proxy-ctl add /api/ http://backend:8000/
+
+# Add with WebSocket support
+docker exec xmpp-proxy-stack nginx-proxy-ctl add /ws/ http://localhost:8080/ --websocket
+
+# List all proxies
+docker exec xmpp-proxy-stack nginx-proxy-ctl list
+
+# Remove a proxy
+docker exec xmpp-proxy-stack nginx-proxy-ctl remove /api/
+
+# Validate nginx configuration
+docker exec xmpp-proxy-stack nginx-proxy-ctl validate
+```
+
+### Certificate Management
+
+Certificates are automatically acquired via Let's Encrypt:
+
+- **Initial acquisition**: On first run, HTTP-01 challenge via nginx
+- **Renewal**: Daily check, auto-renews if expiring in < 30 days
+- **Fallback**: Self-signed certificate if ACME fails (check DNS and port 80)
+
+View certificate details:
+```bash
+docker exec xmpp-proxy-stack /bin/busybox ls -la /certs/
+```
+
+Manual renewal (if needed):
+```bash
+docker exec xmpp-proxy-stack /app/acme.sh --renew -d your-domain.com --force
+```
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│  Horust Process Supervisor                 │
+│  ├─ nginx (HTTP/HTTPS proxy)               │
+│  ├─ xmpp-proxy (XMPP reverse proxy)        │
+│  ├─ fail2ban-rs (intrusion prevention)     │
+│  └─ acme-renewer (daily cert renewal)      │
+└─────────────────────────────────────────────┘
+```
+
+### Troubleshooting
+
+**ACME certificate acquisition fails:**
+1. Check DNS: `dig +short your-domain.com` should return your server IP
+2. Check port 80: `ss -tlnp | grep :80`
+3. Check logs: `docker logs xmpp-proxy-stack 2>&1 | grep -i acme`
+4. Use self-signed for testing: Container falls back automatically
+
+**Volume permission errors:**
+```bash
+chown -R 65532:65532 /srv/xmpp/{certs,logs,fail2ban,acme}
+```
+
+**View service logs:**
+```bash
+docker exec xmpp-proxy-stack /bin/busybox cat /logs/nginx-stdout.log
+docker exec xmpp-proxy-stack /bin/busybox cat /logs/xmpp-proxy-stdout.log
+```
+
+## Migrating from Debian-slim to Distroless
+
+If upgrading from the old Debian-slim based stack:
+
+### 1. Backup Current Setup
+
+```bash
+# Backup certificates
+cp -r /srv/xmpp/certs /srv/xmpp/certs.backup
+
+# Backup configuration
+docker exec xmpp-proxy-stack tar czf /tmp/configs.tar.gz /etc/xmpp-proxy /etc/fail2ban-rs
+docker cp xmpp-proxy-stack:/tmp/configs.tar.gz ./configs-backup.tar.gz
+```
+
+### 2. Rebuild with Distroless
+
+```bash
+# Pull latest code
+git pull origin main
+
+# Rebuild
+docker-compose build xmpp-proxy-stack
+
+# Stop old container
+docker-compose stop xmpp-proxy-stack
+
+# Start new distroless container
+docker-compose up -d xmpp-proxy-stack
+```
+
+### 3. Verify Migration
+
+```bash
+# Check container is running
+docker ps | grep xmpp-proxy-stack
+
+# Verify services
+docker exec xmpp-proxy-stack /bin/busybox ps aux
+
+# Check certificates
+docker exec xmpp-proxy-stack /bin/busybox ls -la /certs/
+
+# Test nginx-proxy-ctl
+docker exec xmpp-proxy-stack nginx-proxy-ctl list
+```
+
+### Rollback (if needed)
+
+```bash
+# Stop distroless container
+docker-compose stop xmpp-proxy-stack
+
+# Rename Dockerfiles
+mv xmpp-proxy-stack/Dockerfile.distroless xmpp-proxy-stack/Dockerfile.distroless.new
+mv xmpp-proxy-stack/Dockerfile.debian xmpp-proxy-stack/Dockerfile
+
+# Update docker-compose.yaml to use Dockerfile instead of Dockerfile.distroless
+
+# Rebuild
+docker-compose build xmpp-proxy-stack
+docker-compose up -d xmpp-proxy-stack
+```
