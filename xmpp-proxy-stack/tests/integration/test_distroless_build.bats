@@ -6,10 +6,10 @@ setup_file() {
     export TEST_DIR="$BATS_TEST_DIRNAME"
     export PROJECT_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
 
-    # Build the distroless image
-    echo "Building distroless image..." >&2
+    # Build the image
+    echo "Building image..." >&2
     cd "$PROJECT_ROOT"
-    docker build -t xmpp-proxy-stack:test -f Dockerfile.distroless .
+    docker build -t xmpp-proxy-stack:test -f Dockerfile .
 }
 
 teardown_file() {
