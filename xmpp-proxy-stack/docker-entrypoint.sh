@@ -27,6 +27,14 @@ if [ ! -f /certs/fullchain.pem ] || [ ! -f /certs/privkey.pem ]; then
     mkdir -p /var/run/acme/acme-challenge
     mkdir -p /etc/acme.sh/default
 
+    # Generate temporary self-signed certificate for nginx to start
+    # (nginx requires certs to exist even for HTTP-only operation due to HTTPS server block)
+    echo "Generating temporary self-signed certificate..."
+    openssl req -x509 -newkey rsa:2048 -nodes \
+        -keyout /certs/privkey.pem \
+        -out /certs/fullchain.pem \
+        -days 1 -subj "/CN=${XMPP_DOMAIN}" 2>/dev/null
+
     # Start nginx for HTTP-01 challenge
     echo "Starting nginx for ACME challenge..."
     /usr/sbin/nginx
@@ -52,12 +60,13 @@ if [ ! -f /certs/fullchain.pem ] || [ ! -f /certs/privkey.pem ]; then
         --keylength 4096 \
         --server "${ACME_SERVER}"; then
 
-        # Symlink to /certs/
-        ln -sf "/etc/acme.sh/default/${XMPP_DOMAIN}/${XMPP_DOMAIN}.cer" /certs/fullchain.pem
-        ln -sf "/etc/acme.sh/default/${XMPP_DOMAIN}/${XMPP_DOMAIN}.key" /certs/privkey.pem
+        # Replace temporary certs with real ones
+        rm -f /certs/fullchain.pem /certs/privkey.pem
+        ln -s "/etc/acme.sh/default/${XMPP_DOMAIN}/${XMPP_DOMAIN}.cer" /certs/fullchain.pem
+        ln -s "/etc/acme.sh/default/${XMPP_DOMAIN}/${XMPP_DOMAIN}.key" /certs/privkey.pem
         echo "✓ Certificate acquired successfully!"
     else
-        echo "ACME acquisition failed. Generating self-signed certificate..."
+        echo "ACME acquisition failed. Using self-signed certificate..."
         echo ""
         echo "Possible causes:"
         echo "  1. DNS A/AAAA record for ${XMPP_DOMAIN} not pointing to this server"
@@ -65,7 +74,8 @@ if [ ! -f /certs/fullchain.pem ] || [ ! -f /certs/privkey.pem ]; then
         echo "  3. Let's Encrypt rate limit"
         echo ""
 
-        # Generate self-signed certificate
+        # Replace temporary cert with a longer-lived self-signed certificate
+        rm -f /certs/fullchain.pem /certs/privkey.pem
         openssl req -x509 -newkey rsa:4096 -nodes \
             -keyout /certs/privkey.pem \
             -out /certs/fullchain.pem \
