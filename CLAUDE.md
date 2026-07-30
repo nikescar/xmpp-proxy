@@ -321,3 +321,305 @@ cargo test --features net-test
 - Use `RUST_LOG=debug` environment variable
 - Enable `console` feature + tokio-console for async debugging
 - Check for feature flag mismatches if code doesn't compile
+
+## 3. Component: xmpp-proxy-stack (Docker)
+
+### 3.1 What's Bundled
+
+The `xmpp-proxy-stack` container includes:
+
+1. **xmpp-proxy** - The Rust proxy binary
+   - Built from source (dev) or downloaded as static binary (production)
+   - Listens on public ports: 5222, 5223, 5269, 443/udp
+   - Forwards to Prosody via PROXY protocol
+
+2. **nginx** - HTTP/HTTPS server
+   - Listens on port 80 (HTTP)
+   - Serves ACME HTTP-01 challenges at `/.well-known/acme-challenge/`
+   - Dynamic reverse proxy capability via nginx-proxy-ctl
+   - Redirects HTTP to HTTPS for non-ACME paths
+
+3. **fail2ban-rs** - Rust-based fail2ban implementation
+   - Monitors xmpp-proxy logs for abuse patterns
+   - Configurable ban thresholds and durations
+   - Persists ban state to `/var/lib/fail2ban-rs`
+
+4. **acme.sh** - ACME client for Let's Encrypt
+   - Runs as cron job (daily certificate renewal check)
+   - Uses HTTP-01 challenge via nginx
+   - Automatically renews certificates within 30 days of expiration
+   - Falls back to self-signed cert if ACME fails
+
+5. **horust** - Process supervisor
+   - Manages all services above
+   - Handles dependencies (e.g., xmpp-proxy waits for certs)
+   - Proper signal forwarding for graceful shutdown
+   - Service definitions in `/etc/horust/services/`
+
+6. **busybox** - Minimal POSIX utilities
+   - Workaround for distroless limitations
+   - Provides: sh, ls, cat, grep, etc.
+   - Access via: `docker exec xmpp-proxy-stack /bin/busybox sh`
+
+### 3.2 Build Variants
+
+**Production (`docker-compose.yaml`):**
+```yaml
+services:
+  xmpp-proxy-stack:
+    image: ghcr.io/nikescar/xmpp-proxy-stack:${XMPP_PROXY_STACK_TAG:-latest}
+```
+- Pulls pre-built image from GitHub Container Registry
+- No build step required
+- Fast deployment
+- Use for: Production, stable deployments
+
+**Development (`docker-compose.dev.yaml`):**
+```yaml
+services:
+  xmpp-proxy-stack:
+    build:
+      context: ./xmpp-proxy-stack
+      dockerfile: Dockerfile
+```
+- Builds from source using local Dockerfile
+- Build arguments: XMPP_PROXY_VERSION, FAIL2BAN_RS_VERSION, HORUST_VERSION
+- Slower first build (Rust compilation)
+- Use for: Testing Dockerfile changes, custom builds, local development
+
+**When to use dev variant:**
+- Modifying `xmpp-proxy-stack/Dockerfile`
+- Changing `docker-entrypoint.sh` startup logic
+- Updating `nginx-proxy-ctl` script
+- Modifying horust service definitions
+- Testing new template configurations
+- Debugging container build issues
+
+### 3.3 Key Files in xmpp-proxy-stack/
+
+**Dockerfile** - Multi-stage build
+- Stage 1: Builder (Rust toolchain)
+  - Downloads or builds xmpp-proxy binary
+  - Downloads fail2ban-rs and horust binaries
+  - Compiles any additional tools
+- Stage 2: Runtime (distroless base)
+  - Copies binaries from builder
+  - Adds nginx, acme.sh, busybox
+  - Sets up directory structure
+  - Final image ~50-100MB
+
+**docker-entrypoint.sh** - Container initialization
+- Runs on container start
+- Responsibilities:
+  1. Check for TLS certificates in `/certs/`
+  2. Generate self-signed cert if missing (bootstrap)
+  3. Set up environment variables for services
+  4. Launch horust supervisor
+  5. Handle signals for graceful shutdown
+
+**nginx-proxy-ctl** - Dynamic proxy configuration tool
+- Shell script for runtime nginx management
+- No container rebuild required
+- Commands:
+  - `add <path> <upstream> [--websocket]` - Add reverse proxy
+  - `remove <path>` - Remove proxy
+  - `list` - Show configured proxies
+  - `validate` - Check nginx config syntax
+- Implementation: Modifies `/etc/nginx/conf.d/proxy.conf`, runs `nginx -s reload`
+
+**horust-services/** - Service supervisor configs
+- `xmpp-proxy.toml` - xmpp-proxy service definition
+  - Command, environment, restart policy
+  - Start delay (waits for certs)
+- `nginx.toml` - nginx service
+- `fail2ban-rs.toml` - fail2ban service
+- `acme-cron.toml` - Certificate renewal cron
+- Each file defines: command, working_dir, restart strategy, start_delay
+
+**templates/** - Configuration file templates
+- `nginx.conf.template` - Main nginx config
+  - Port 80 listener for ACME
+  - Include directory for dynamic proxies
+- `xmpp-proxy.toml.template` - xmpp-proxy runtime config
+  - Listen addresses, TLS cert paths
+  - Prosody backend addresses
+  - PROXY protocol settings
+- `prosody-proxy.cfg.lua` - Prosody configuration snippet
+  - Mounts into Prosody container
+  - Configures PROXY protocol ports
+  - Sets proxy_secure flag
+
+### 3.4 Development Workflow
+
+**Typical iteration cycle:**
+
+1. **Make changes**
+   - Edit Dockerfile, scripts, templates, or horust configs
+   - Example: Modify nginx template to add new default route
+
+2. **Build the image**
+   ```bash
+   docker compose -f docker-compose.dev.yaml build xmpp-proxy-stack
+   ```
+   - Only rebuilds changed layers (Docker cache)
+   - Rust compilation can take 5-15 minutes on first build
+   - Subsequent builds faster if only scripts/templates changed
+
+3. **Test locally**
+   ```bash
+   docker compose -f docker-compose.dev.yaml up -d
+   ```
+   - Starts both containers (prosody + xmpp-proxy-stack)
+   - Check logs: `docker logs -f xmpp-proxy-stack`
+
+4. **Validate functionality**
+   - XMPP connection test: Use XMPP client to connect
+   - Certificate check: `docker exec xmpp-proxy-stack /bin/busybox ls -la /certs/`
+   - nginx test: `curl -I http://localhost/`
+   - Service status: Check logs for all horust services
+
+5. **Iterate or commit**
+   - If issues: Fix, rebuild, retest
+   - If working: Commit changes, optionally push image to registry
+
+**Quick validation checklist:**
+- [ ] Both containers running: `docker ps`
+- [ ] Ports listening: `ss -tlnp | grep -E ':(5222|5223|5269|80)'`
+- [ ] Prosody healthy: `docker logs prosody` (no errors)
+- [ ] xmpp-proxy started: `docker exec xmpp-proxy-stack /bin/busybox cat /logs/xmpp-proxy-stdout.log`
+- [ ] nginx responding: `curl http://localhost/`
+- [ ] Certs exist: `docker exec xmpp-proxy-stack /bin/busybox ls /certs/`
+
+### 3.5 nginx-proxy-ctl Usage
+
+**Purpose:** Add reverse proxy routes without rebuilding container.
+
+**Examples:**
+
+Add API proxy:
+```bash
+docker exec xmpp-proxy-stack nginx-proxy-ctl add /api/ http://localhost:8000/
+```
+
+Add WebSocket proxy:
+```bash
+docker exec xmpp-proxy-stack nginx-proxy-ctl add /ws/ http://localhost:8080/ --websocket
+```
+
+List current proxies:
+```bash
+docker exec xmpp-proxy-stack nginx-proxy-ctl list
+```
+
+Remove a proxy:
+```bash
+docker exec xmpp-proxy-stack nginx-proxy-ctl remove /api/
+```
+
+Validate nginx config:
+```bash
+docker exec xmpp-proxy-stack nginx-proxy-ctl validate
+```
+
+**Use cases:**
+- Expose Prosody admin API externally
+- Add WebSocket endpoint for custom services
+- Proxy to monitoring dashboards
+- Temporary debugging endpoints
+
+**How it works:**
+1. Script writes to `/etc/nginx/conf.d/proxy-<hash>.conf`
+2. Runs `nginx -t` to validate syntax
+3. Runs `nginx -s reload` to apply changes
+4. No container restart needed
+
+### 3.6 Environment Variables
+
+**Required (.env file):**
+```bash
+XMPP_DOMAIN=chat.example.com          # Your XMPP domain
+ACME_EMAIL=admin@example.com          # Let's Encrypt notifications
+```
+
+**Optional runtime configuration:**
+```bash
+XMPP_ADMIN=admin@chat.example.com     # Admin JID (default: admin@${XMPP_DOMAIN})
+PROSODY_LOGLEVEL=info                 # debug|info|warn|error
+PROSODY_RETENTION_DAYS=90             # Message archive retention
+FAIL2BAN_MAX_RETRY=5                  # Attempts before ban
+FAIL2BAN_BAN_TIME=1h                  # Ban duration
+FAIL2BAN_FIND_TIME=10m                # Detection window
+```
+
+**Build-time (docker-compose.dev.yaml only):**
+```bash
+XMPP_PROXY_VERSION=latest             # Git tag or 'latest'
+FAIL2BAN_RS_VERSION=latest            # fail2ban-rs version
+HORUST_VERSION=0.1.13                 # horust version
+```
+
+**Production image tag (docker-compose.yaml only):**
+```bash
+XMPP_PROXY_STACK_TAG=latest           # 'latest' or specific version (e.g., v1.0.0)
+```
+
+### 3.7 Common Development Tasks
+
+**Modify horust service definitions:**
+1. Edit files in `xmpp-proxy-stack/horust-services/`
+2. Example: Change xmpp-proxy log level, add environment variable
+3. Rebuild: `docker compose -f docker-compose.dev.yaml build xmpp-proxy-stack`
+4. Test: `docker compose -f docker-compose.dev.yaml up -d`
+5. Verify: Check service logs for expected behavior
+
+**Update nginx configuration:**
+1. Edit `xmpp-proxy-stack/templates/nginx.conf.template`
+2. Example: Add new location block, change SSL settings
+3. Rebuild and test as above
+4. Validate: `docker exec xmpp-proxy-stack nginx -t`
+
+**Debug distroless container:**
+- **Limited shell access:**
+  ```bash
+  docker exec -it xmpp-proxy-stack /bin/busybox sh
+  ```
+  - Only busybox commands available
+  - No package manager, no apt/yum
+
+- **View logs:**
+  ```bash
+  docker exec xmpp-proxy-stack /bin/busybox cat /logs/xmpp-proxy-stdout.log
+  docker exec xmpp-proxy-stack /bin/busybox cat /logs/nginx-stderr.log
+  ```
+
+- **Check processes:**
+  ```bash
+  docker exec xmpp-proxy-stack /bin/busybox ps aux
+  ```
+
+- **Inspect files:**
+  ```bash
+  docker exec xmpp-proxy-stack /bin/busybox ls -la /certs/
+  docker exec xmpp-proxy-stack /bin/busybox cat /etc/nginx/nginx.conf
+  ```
+
+**Change binary versions:**
+1. Edit `.env` file (dev build only):
+   ```bash
+   XMPP_PROXY_VERSION=v1.2.0
+   FAIL2BAN_RS_VERSION=v0.5.0
+   ```
+2. Force rebuild (no cache):
+   ```bash
+   docker compose -f docker-compose.dev.yaml build --no-cache xmpp-proxy-stack
+   ```
+
+**Add new supervised service:**
+1. Create `xmpp-proxy-stack/horust-services/newservice.toml`:
+   ```toml
+   command = "/usr/local/bin/newservice"
+   start-delay = "5s"
+   restart-strategy = "always"
+   ```
+2. Ensure binary is copied in Dockerfile
+3. Rebuild and test
