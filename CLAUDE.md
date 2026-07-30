@@ -623,3 +623,580 @@ XMPP_PROXY_STACK_TAG=latest           # 'latest' or specific version (e.g., v1.0
    ```
 2. Ensure binary is copied in Dockerfile
 3. Rebuild and test
+
+## 4. Component: Integration & Testing
+
+### 4.1 Integration Test Suite
+
+**Location:** `integration/test.sh`
+
+**Purpose:**
+- Validate xmpp-proxy with real XMPP connections
+- Test all supported protocols in realistic scenarios
+- Prevent regressions before commits
+
+**Technology:**
+- Uses **rootless podman** (not Docker)
+- Spins up temporary containers for testing
+- Simulates client and server XMPP connections
+- Cleans up after test run
+
+**What it tests:**
+- STARTTLS connection flow
+- Direct TLS connections
+- QUIC protocol (if feature enabled)
+- WebSocket transport (if feature enabled)
+- Certificate validation
+- PROXY protocol header passing
+- Stanza filtering under size limits
+
+**Requirements:**
+- Rootless podman configured (see [Arch Wiki: Rootless Podman](https://wiki.archlinux.org/title/Podman#Rootless_Podman))
+- xmpp-proxy binary built with appropriate features
+- Network connectivity for test containers
+
+### 4.2 Running Integration Tests
+
+**Full test suite:**
+```bash
+cd integration
+./test.sh
+```
+
+**Expected output:**
+- Test containers created
+- XMPP connections established
+- Protocol-specific validations
+- Cleanup of test resources
+- Summary: PASS/FAIL for each test
+
+**When tests fail:**
+
+1. **Check feature flags:**
+   - Test requires QUIC but binary built without `quic` feature?
+   - Rebuild with correct features: `cargo build --release`
+
+2. **Verify podman setup:**
+   - Rootless podman working? `podman run hello-world`
+   - Check user namespaces: `cat /proc/sys/user/max_user_namespaces` (should be > 0)
+
+3. **Inspect test logs:**
+   - Tests may leave logs in `integration/logs/` (check test.sh for details)
+   - Use `podman logs <container-name>` if containers not cleaned up
+
+4. **Network issues:**
+   - Firewall blocking ports?
+   - SELinux denials? Check `ausearch -m avc -ts recent`
+
+**Debugging specific tests:**
+- Edit `integration/test.sh` to run individual test functions
+- Add `set -x` for verbose output
+- Disable cleanup to inspect container state
+
+**Pre-commit requirement:**
+All integration tests must pass before pushing commits. This ensures:
+- Feature flags work correctly
+- Protocol implementations maintain compatibility
+- No regressions in core functionality
+
+### 4.3 Testing the Full Docker Stack
+
+**Quick validation after changes:**
+
+1. **Start the stack:**
+   ```bash
+   docker compose -f docker-compose.dev.yaml up -d
+   ```
+
+2. **Verify containers running:**
+   ```bash
+   docker ps
+   ```
+   Expected: Both `prosody` and `xmpp-proxy-stack` in "Up" state
+
+3. **Check port bindings:**
+   ```bash
+   ss -tlnp | grep -E ':(5222|5223|5269|80|5280)'
+   ```
+   Expected: Ports 5222, 5223, 5269, 80, 5280 in LISTEN state
+
+4. **Verify logs:**
+   ```bash
+   docker logs prosody
+   docker logs xmpp-proxy-stack
+   ```
+   Look for: No errors, services started successfully
+
+5. **Test XMPP connection:**
+   - Use XMPP client (Gajim, Conversations, etc.)
+   - Connect to `user@localhost` (if testing locally with /etc/hosts entry)
+   - Verify connection succeeds, check prosody logs for real client IP
+
+6. **Verify certificates:**
+   ```bash
+   docker exec xmpp-proxy-stack /bin/busybox ls -la /certs/
+   ```
+   Expected: `fullchain.cer`, `le.key` exist (self-signed on first run, ACME later)
+
+### 4.4 Testing Specific Features
+
+**QUIC protocol:**
+1. Verify QUIC feature enabled: `xmpp-proxy --version` or check Cargo.toml
+2. Check port 443/udp listening: `ss -unp | grep :443`
+3. Test with QUIC-capable XMPP client
+4. Monitor logs: `docker exec xmpp-proxy-stack /bin/busybox cat /logs/xmpp-proxy-stdout.log | grep -i quic`
+
+**WebSocket:**
+1. Verify port 5280 accessible: `curl http://localhost:5280/`
+2. Test WebSocket endpoint: Use browser console or wscat
+   ```bash
+   wscat -c ws://localhost:5280/xmpp-websocket
+   ```
+3. Check Prosody logs for WebSocket connections
+
+**PROXY protocol:**
+1. Connect XMPP client from external IP
+2. Check Prosody logs: `docker logs prosody | grep -i "c2s.*connected"`
+3. Verify real client IP shown (not 127.0.0.1)
+4. If showing 127.0.0.1: Check host networking enabled, mod_net_proxy loaded
+
+**fail2ban-rs:**
+1. Trigger rate limit (multiple failed auth attempts)
+2. Check ban state:
+   ```bash
+   docker exec xmpp-proxy-stack /bin/busybox cat /var/lib/fail2ban-rs/state
+   ```
+3. Verify IP banned, connections rejected
+
+**Certificate auto-renewal:**
+1. Ensure DNS points to server, port 80 accessible externally
+2. Trigger renewal manually:
+   ```bash
+   docker exec xmpp-proxy-stack /root/.acme.sh/acme.sh --renew -d $XMPP_DOMAIN --force
+   ```
+3. Check logs for ACME challenge success
+4. Verify services reloaded with new cert
+
+### 4.5 Debugging Workflows
+
+**Rust panic or crash:**
+1. Check stderr log:
+   ```bash
+   docker exec xmpp-proxy-stack /bin/busybox cat /logs/xmpp-proxy-stderr.log
+   ```
+2. Look for stack trace, panic message
+3. Enable debug logging: Set `RUST_LOG=debug` in horust service config
+4. Reproduce issue, check detailed logs
+
+**Connection refused errors:**
+1. Verify Prosody running: `docker exec prosody prosodyctl status`
+2. Check port mappings: Prosody listening on 15222, 15269?
+   ```bash
+   docker exec prosody ss -tln | grep -E ':(15222|15269)'
+   ```
+3. Verify networking mode: `docker inspect xmpp-proxy-stack | grep NetworkMode`
+   - Should be "host" for xmpp-proxy-stack
+4. Check firewall: `iptables -L` or `firewall-cmd --list-all`
+
+**TLS/certificate errors:**
+1. Verify cert files exist and are readable:
+   ```bash
+   docker exec xmpp-proxy-stack /bin/busybox ls -la /certs/
+   ```
+2. Check cert validity:
+   ```bash
+   openssl x509 -in /srv/xmpp/certs/fullchain.cer -noout -text
+   ```
+3. Verify domain matches: Certificate CN/SAN should match XMPP_DOMAIN
+4. Check acme.sh logs for acquisition errors
+
+**PROXY protocol not working:**
+1. Confirm host networking: `docker inspect xmpp-proxy-stack | grep NetworkMode`
+2. Verify Prosody config: `docker exec prosody cat /etc/prosody/conf.d/proxy.cfg.lua`
+3. Check mod_net_proxy loaded: `docker logs prosody | grep net_proxy`
+4. Test manually: Send raw PROXY header to Prosody:
+   ```bash
+   echo -e "PROXY TCP4 203.0.113.45 127.0.0.1 54321 15222\r\n" | nc localhost 15222
+   ```
+
+**Permission errors:**
+1. Most common: `/srv/xmpp/prosody` owned by root
+2. Fix:
+   ```bash
+   sudo chown -R 100:102 /srv/xmpp/prosody /srv/xmpp/logs/prosody
+   ```
+3. Verify:
+   ```bash
+   ls -la /srv/xmpp/prosody
+   ```
+   Should show `100:102` or `prosody:prosody`
+
+**Service not starting in horust:**
+1. Check horust logs:
+   ```bash
+   docker logs xmpp-proxy-stack 2>&1 | grep -i horust
+   ```
+2. Inspect service definitions:
+   ```bash
+   docker exec xmpp-proxy-stack /bin/busybox cat /etc/horust/services/xmpp-proxy.toml
+   ```
+3. Common issues:
+   - Start delay too short (service dependency not ready)
+   - Command path incorrect
+   - Missing environment variables
+
+## 5. Reference
+
+### 5.1 Feature Flag Quick Reference
+
+**Valid combinations (examples):**
+
+Minimal reverse proxy (TLS only):
+```
+c2s-incoming,s2s-incoming,tls,tls-ring
+```
+
+Full-featured reverse + outgoing:
+```
+c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,
+tls,quic,websocket,webtransport,logging,
+tls-ca-roots-native,tls-ring
+```
+
+Outgoing proxy only:
+```
+c2s-outgoing,s2s-outgoing,tls,quic,
+tls-ca-roots-bundled,tls-aws-lc-rs
+```
+
+**Invalid combinations (will not compile):**
+
+Both CA root options:
+```
+❌ tls-ca-roots-native,tls-ca-roots-bundled
+```
+
+WebTransport without QUIC:
+```
+❌ webtransport  (missing quic feature)
+```
+
+Outgoing without CA roots:
+```
+❌ c2s-outgoing,tls  (missing tls-ca-roots-*)
+```
+
+Multiple TLS providers:
+```
+❌ tls-ring,tls-aws-lc-rs
+```
+
+### 5.2 File Structure Map
+
+```
+xmpp-proxy/
+├── src/                              # Rust source code
+│   ├── main.rs                       # Entry point, config parsing, runtime
+│   ├── context.rs                    # Shared configuration and state
+│   ├── in_out.rs                     # Core proxy logic and dispatch
+│   ├── srv.rs                        # DNS SRV, host-meta, POSH lookups
+│   ├── stanzafilter.rs               # Stanza size limiting (no XML parser)
+│   ├── verify.rs                     # S2S certificate validation
+│   ├── slicesubsequence.rs           # Byte slice utilities
+│   ├── outgoing.rs                   # Outgoing connection logic
+│   ├── systemd.rs                    # Systemd socket activation
+│   ├── tls/                          # STARTTLS/Direct TLS implementation
+│   ├── quic/                         # QUIC protocol implementation
+│   ├── websocket/                    # WebSocket transport
+│   ├── webtransport/                 # WebTransport implementation
+│   └── common/                       # Shared types and helpers
+│
+├── xmpp-proxy-stack/                 # Docker bundled stack
+│   ├── Dockerfile                    # Multi-stage distroless build
+│   ├── docker-entrypoint.sh          # Container startup script
+│   ├── nginx-proxy-ctl               # Dynamic nginx config tool
+│   ├── horust-services/              # Process supervisor configs
+│   │   ├── xmpp-proxy.toml           # xmpp-proxy service definition
+│   │   ├── nginx.toml                # nginx service definition
+│   │   ├── fail2ban-rs.toml          # fail2ban service definition
+│   │   └── acme-cron.toml            # Certificate renewal cron
+│   ├── templates/                    # Configuration templates
+│   │   ├── nginx.conf.template       # nginx base config
+│   │   ├── xmpp-proxy.toml.template  # xmpp-proxy runtime config
+│   │   └── prosody-proxy.cfg.lua     # Prosody PROXY protocol config
+│   └── tests/                        # Stack validation tests
+│
+├── integration/                      # Podman-based integration tests
+│   └── test.sh                       # Test suite entry point
+│
+├── Cargo.toml                        # Rust dependencies and features
+├── xmpp-proxy.toml                   # Example runtime configuration
+│
+├── docker-compose.yaml               # Production stack (pulls image)
+├── docker-compose.dev.yaml           # Development stack (builds from source)
+├── .env.example                      # Environment variable template
+│
+├── docs/                             # Documentation
+├── contrib/                          # Contributed configs, logos, etc.
+├── scripts/                          # Utility scripts
+├── .github/                          # GitHub Actions CI/CD
+└── .ci/                              # CI configuration
+```
+
+### 5.3 Environment Variables Reference
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `XMPP_DOMAIN` | ✅ Yes | - | Your XMPP domain (e.g., chat.example.com) |
+| `ACME_EMAIL` | ✅ Yes | - | Email for Let's Encrypt notifications |
+| `XMPP_ADMIN` | No | `admin@${XMPP_DOMAIN}` | Admin JID for Prosody |
+| `PROSODY_LOGLEVEL` | No | `info` | Prosody log level (debug, info, warn, error) |
+| `PROSODY_RETENTION_DAYS` | No | `90` | Message Archive Management retention |
+| `FAIL2BAN_MAX_RETRY` | No | `5` | Failed attempts before ban |
+| `FAIL2BAN_BAN_TIME` | No | `1h` | How long to ban (e.g., 1h, 30m) |
+| `FAIL2BAN_FIND_TIME` | No | `10m` | Time window for counting failures |
+| `XMPP_PROXY_VERSION` | No (dev only) | `latest` | Git tag or 'latest' to build |
+| `FAIL2BAN_RS_VERSION` | No (dev only) | `latest` | fail2ban-rs version to download |
+| `HORUST_VERSION` | No (dev only) | `0.1.13` | horust version to bundle |
+| `XMPP_PROXY_STACK_TAG` | No (prod only) | `latest` | ghcr.io image tag to pull |
+
+### 5.4 Common Gotchas
+
+**1. Prosody crash loop: "UID '0' already exists"**
+
+**Symptom:**
+```
+docker logs prosody
+usermod: UID '0' already exists
+```
+
+**Cause:** Docker auto-created `/srv/xmpp/prosody` as root (UID 0). Prosody container expects UID 100:102.
+
+**Fix:**
+```bash
+docker compose down
+sudo chown -R 100:102 /srv/xmpp/prosody /srv/xmpp/logs/prosody
+docker compose up -d
+```
+
+**Prevention:** Create directories with correct ownership before first `docker compose up`.
+
+---
+
+**2. Host networking is required for PROXY protocol**
+
+**Why:** PROXY protocol v1 passes real client IP addresses to Prosody. Bridge networking would show all connections as coming from Docker bridge IP (usually 172.x.x.x), breaking rate limiting and logging.
+
+**Don't do this:**
+```yaml
+# ❌ DO NOT CHANGE TO BRIDGE NETWORKING
+xmpp-proxy-stack:
+  network_mode: bridge
+```
+
+**Correct:**
+```yaml
+xmpp-proxy-stack:
+  network_mode: host  # ✅ Required for PROXY protocol
+```
+
+**Trade-off:** Only one container can use host networking and bind to standard ports. This is why services are bundled into one container.
+
+---
+
+**3. Port conflicts on host**
+
+**Symptom:**
+```
+Error starting userland proxy: listen tcp4 0.0.0.0:5222: bind: address already in use
+```
+
+**Cause:** Another service (ejabberd, another XMPP server, previous xmpp-proxy) already bound to the port.
+
+**Check:**
+```bash
+ss -tlnp | grep -E ':(5222|5223|5269|80|443|5280)'
+```
+
+**Fix:**
+- Stop conflicting service
+- Or change xmpp-proxy ports in config (non-standard, may break clients)
+
+---
+
+**4. Certificates not renewing / ACME failures**
+
+**Symptom:**
+```
+docker logs xmpp-proxy-stack | grep -i acme
+acme.sh: verification failed
+```
+
+**Common causes:**
+
+a) **DNS not pointing to server:**
+```bash
+dig +short $XMPP_DOMAIN
+# Should return your server's public IP
+```
+
+b) **Port 80 not accessible externally:**
+- Check firewall: `sudo firewall-cmd --list-all | grep 80`
+- Check router NAT/port forwarding
+
+c) **nginx not serving ACME challenges:**
+```bash
+curl http://$XMPP_DOMAIN/.well-known/acme-challenge/test
+# Should get 404 from nginx, not connection refused
+```
+
+**Debug:**
+```bash
+docker exec xmpp-proxy-stack /root/.acme.sh/acme.sh --renew -d $XMPP_DOMAIN --force --debug
+```
+
+---
+
+**5. Can't execute commands in xmpp-proxy-stack**
+
+**Symptom:**
+```
+docker exec xmpp-proxy-stack ls
+OCI runtime exec failed: exec failed: unable to start container process: exec: "ls": executable file not found
+```
+
+**Cause:** Distroless image has no shell, no coreutils.
+
+**Correct approach:**
+```bash
+docker exec xmpp-proxy-stack /bin/busybox ls
+docker exec xmpp-proxy-stack /bin/busybox sh
+```
+
+**Available commands:** Only busybox built-ins (sh, cat, ls, grep, ps, etc.)
+
+---
+
+**6. Integration tests fail with "podman: command not found"**
+
+**Cause:** Integration tests require rootless podman, not Docker.
+
+**Fix:**
+1. Install podman: `sudo pacman -S podman` (Arch) or equivalent
+2. Configure rootless: `podman system migrate`
+3. Verify: `podman run hello-world`
+
+**Note:** Docker will not work for integration tests. They specifically use podman features.
+
+---
+
+**7. WebSocket connections fail**
+
+**Symptom:** Client can't connect to `ws://domain:5280/xmpp-websocket`
+
+**Check:**
+1. Prosody websocket module loaded:
+   ```bash
+   docker logs prosody | grep websocket
+   ```
+2. Port 5280 accessible:
+   ```bash
+   curl http://localhost:5280/
+   ```
+3. nginx routing (if proxying WebSocket):
+   ```bash
+   docker exec xmpp-proxy-stack /bin/busybox cat /etc/nginx/nginx.conf | grep -A5 websocket
+   ```
+
+**Common fix:** Ensure Prosody `modules_enabled` includes `websocket`.
+
+---
+
+**8. PROXY protocol shows 127.0.0.1 instead of real IPs**
+
+**Symptom:** Prosody logs show all connections from 127.0.0.1.
+
+**Causes:**
+
+a) **mod_net_proxy not loaded:**
+```bash
+docker logs prosody | grep net_proxy
+# Should see: "mod_net_proxy loaded"
+```
+
+b) **PROXY protocol port mapping incorrect:**
+Check `proxy_port_mappings` in Prosody config:
+```lua
+proxy_port_mappings = {
+    [15222] = "c2s",
+    [15269] = "s2s"
+}
+```
+
+c) **xmpp-proxy not sending PROXY header:**
+Check xmpp-proxy config (`send_proxy_v1 = true`)
+
+---
+
+**9. Feature flag compilation errors**
+
+**Symptom:**
+```
+error: Package `xmpp-proxy` does not have feature `webtransport`
+```
+
+**Cause:** Typo in feature name, or dependency on another feature.
+
+**Fix:**
+- Check `Cargo.toml` `[features]` section for exact names
+- Verify feature dependencies (e.g., `webtransport` requires `quic`)
+- Use `./check-all-features.sh` to validate all combinations
+
+---
+
+**10. Docker cache issues after Dockerfile changes**
+
+**Symptom:** Changes to scripts/templates not reflected in built image.
+
+**Cause:** Docker layer cache reused old version.
+
+**Fix:**
+```bash
+docker compose -f docker-compose.dev.yaml build --no-cache xmpp-proxy-stack
+```
+
+**Prevention:** Organize Dockerfile so frequently-changed files (scripts, templates) are COPYed late, less-frequent dependencies (Rust build) early.
+
+### 5.5 Port Reference
+
+**Public (exposed to internet):**
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 5222/tcp | XMPP C2S | Client-to-Server (STARTTLS) |
+| 5223/tcp | XMPP C2S | Client-to-Server (Direct TLS) |
+| 5269/tcp | XMPP S2S | Server-to-Server |
+| 443/udp | XMPP over QUIC | QUIC transport (XEP-0467) |
+| 5280/tcp | HTTP/WS | WebSocket, BOSH, HTTP API |
+| 80/tcp | HTTP | ACME challenges, redirects |
+
+**Internal (localhost only):**
+
+| Port | Purpose |
+|------|---------|
+| 15222/tcp | Prosody C2S (receives from xmpp-proxy) |
+| 15269/tcp | Prosody S2S (receives from xmpp-proxy) |
+| 15280/tcp | Prosody HTTP (internal only) |
+
+**Data flow example (C2S):**
+```
+Client (203.0.113.45:54321)
+  ↓ TLS connection
+xmpp-proxy-stack (host network, port 5222)
+  ↓ TLS termination
+  ↓ PROXY protocol: "PROXY TCP4 203.0.113.45 127.0.0.1 54321 15222\r\n"
+  ↓ Plain TCP
+prosody (bridge network, 127.0.0.1:15222)
+  ↓ mod_net_proxy parses header
+  ↓ Logs: "Client 203.0.113.45 connected"
+```
