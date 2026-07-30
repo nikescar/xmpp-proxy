@@ -36,7 +36,7 @@ if [ ! -f /certs/fullchain.pem ] || [ ! -f /certs/privkey.pem ]; then
 
     # Register ACME account
     echo "Registering ACME account..."
-    /app/acme.sh --register-account \
+    /bin/busybox sh /app/acme.sh --register-account \
         --home /app \
         --config-home /etc/acme.sh/default \
         --email "${ACME_EMAIL}" \
@@ -44,7 +44,7 @@ if [ ! -f /certs/fullchain.pem ] || [ ! -f /certs/privkey.pem ]; then
 
     # Issue certificate
     echo "Issuing certificate for ${XMPP_DOMAIN}..."
-    if /app/acme.sh --issue \
+    if /bin/busybox sh /app/acme.sh --issue \
         --home /app \
         --config-home /etc/acme.sh/default \
         --domain "${XMPP_DOMAIN}" \
