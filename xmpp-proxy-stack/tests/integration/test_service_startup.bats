@@ -32,8 +32,10 @@ teardown_file() {
     docker-compose -f docker-compose.test.yml logs > /tmp/xmpp-test-logs.txt 2>&1 || true
     docker-compose -f docker-compose.test.yml down -v 2>/dev/null || true
 
-    # Clean up test directories
-    rm -rf /tmp/xmpp-test
+    # Clean up test directories. acme.sh writes root-owned files under the
+    # acme volume, so remove via a container (root) rather than the host shell.
+    docker run --rm -v /tmp:/host-tmp --entrypoint /bin/busybox xmpp-proxy-stack:test rm -rf /host-tmp/xmpp-test 2>/dev/null || true
+    rm -rf /tmp/xmpp-test 2>/dev/null || true
 }
 
 @test "container starts successfully" {

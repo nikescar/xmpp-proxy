@@ -13,6 +13,6 @@ services:
       - /tmp/xmpp-test/certs:/certs
       - /tmp/xmpp-test/logs:/logs
       - /tmp/xmpp-test/fail2ban:/var/lib/fail2ban-rs
-      - /tmp/xmpp-test/acme:/var/lib/acme
+      - /tmp/xmpp-test/acme:/etc/acme.sh
     labels:
       - "xmpp-proxy-test=true"

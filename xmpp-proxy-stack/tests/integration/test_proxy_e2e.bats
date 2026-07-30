@@ -31,7 +31,7 @@ setup_file() {
         -v /tmp/xmpp-test-e2e/certs:/certs \
         -v /tmp/xmpp-test-e2e/logs:/logs \
         -v /tmp/xmpp-test-e2e/fail2ban:/var/lib/fail2ban-rs \
-        -v /tmp/xmpp-test-e2e/acme:/var/lib/acme \
+        -v /tmp/xmpp-test-e2e/acme:/etc/acme.sh \
         -l xmpp-proxy-test=true \
         xmpp-proxy-stack:test
 
@@ -52,7 +52,10 @@ setup_file() {
 teardown_file() {
     docker logs xmpp-proxy-stack-e2e > /tmp/xmpp-test-e2e-logs.txt 2>&1 || true
     docker rm -f xmpp-proxy-stack-e2e test-backend-e2e 2>/dev/null || true
-    rm -rf /tmp/xmpp-test-e2e
+    # acme.sh writes root-owned files under the acme volume, so remove via a
+    # container (root) rather than the host shell.
+    docker run --rm -v /tmp:/host-tmp --entrypoint /bin/busybox xmpp-proxy-stack:test rm -rf /host-tmp/xmpp-test-e2e 2>/dev/null || true
+    rm -rf /tmp/xmpp-test-e2e 2>/dev/null || true
 }
 
 @test "nginx health endpoint responds" {
