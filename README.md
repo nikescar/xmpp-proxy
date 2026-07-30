@@ -276,7 +276,17 @@ cp .env.example .env
 nano .env  # Set XMPP_DOMAIN and ACME_EMAIL
 ```
 
-2. Start (pulls `ghcr.io/nikescar/xmpp-proxy-stack:${XMPP_PROXY_STACK_TAG:-latest}`):
+2. Create the Prosody data/log directories with the UID/GID the upstream
+   `prosodyim/prosody` image expects (`100:102`). Docker will otherwise
+   auto-create them as `root` on first mount, which makes the prosody
+   container crash-loop with `usermod: UID '0' already exists` (see
+   Troubleshooting):
+```bash
+mkdir -p /srv/xmpp/prosody /srv/xmpp/logs/prosody
+chown -R 100:102 /srv/xmpp/prosody /srv/xmpp/logs/prosody
+```
+
+3. Start (pulls `ghcr.io/nikescar/xmpp-proxy-stack:${XMPP_PROXY_STACK_TAG:-latest}`):
 ```bash
 docker compose up -d
 ```
@@ -289,7 +299,7 @@ Build args `XMPP_PROXY_VERSION`, `FAIL2BAN_RS_VERSION`, and `HORUST_VERSION`
 (all set in `.env`) control which upstream release of each binary gets
 downloaded into the image when building from source.
 
-3. Verify services:
+4. Verify services:
 ```bash
 docker logs xmpp-proxy-stack
 docker exec xmpp-proxy-stack /bin/busybox ps aux
@@ -347,6 +357,20 @@ docker exec xmpp-proxy-stack /bin/busybox sh /app/acme.sh --renew -d your-domain
 ```
 
 ### Troubleshooting
+
+**prosody container crash-loops with `usermod: UID '0' already exists`:**
+The upstream `prosodyim/prosody` image's entrypoint tries to renumber its
+internal `prosody` user (UID `100`) to match whoever owns the bind-mounted
+`/var/lib/prosody` directory, and fails if that owner is `root` (UID 0) -
+a known bug in the upstream image. This happens when `/srv/xmpp/prosody`
+or `/srv/xmpp/logs/prosody` didn't exist before `docker compose up`, since
+Docker auto-creates missing bind-mount directories as `root`. Fix:
+```bash
+docker compose down
+mkdir -p /srv/xmpp/prosody /srv/xmpp/logs/prosody
+chown -R 100:102 /srv/xmpp/prosody /srv/xmpp/logs/prosody
+docker compose up -d
+```
 
 **ACME certificate acquisition fails:**
 1. Check DNS: `dig +short your-domain.com` should return your server IP
