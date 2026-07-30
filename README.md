@@ -167,10 +167,10 @@ To build a reverse proxy only, but supporting all of STARTTLS/TLS/QUIC, run: `ca
 A complete Docker Compose stack is included that provides:
   * **Prosody XMPP server** (prosodyim/prosody:13.0) with MAM, carbons, and web admin enabled
   * **xmpp-proxy** (reverse proxy and outgoing proxy for STARTTLS/TLS/QUIC/WebSocket support)
-  * **nginx** (ACME HTTP-01 challenge handling for Let's Encrypt)
+  * **nginx** (ACME HTTP-01 challenge handling for Let's Encrypt, and dynamic reverse proxying)
   * **fail2ban-rs** (rate limiting and abuse protection)
-  * **supervisord** (process management for the proxy stack)
-  * Automatic TLS certificate management with acmetool
+  * **Horust** (process supervision for nginx, xmpp-proxy, fail2ban-rs, and certificate renewal) running in a hardened distroless container - see [Distroless Deployment](#distroless-deployment-recommended) below for details
+  * Automatic TLS certificate management with acme.sh
   * PROXY protocol support for preserving client IPs
   * WebSocket support on port 5280
   * Full backup and restore scripts
@@ -184,10 +184,14 @@ A complete Docker Compose stack is included that provides:
    ```
    Set at minimum: `XMPP_DOMAIN`, `ACME_EMAIL`
 
-2. Start the stack:
+2. Build and start the stack:
    ```
+   docker compose build
    docker compose up -d
    ```
+   Re-run `docker compose build` after pulling repo updates - `up -d` alone
+   only builds an image if none exists yet, it won't pick up Dockerfile
+   changes on its own.
 
 3. The stack exposes:
    * `5222/tcp` - XMPP C2S (STARTTLS)
@@ -202,7 +206,7 @@ A complete Docker Compose stack is included that provides:
    * `certs/` - TLS certificates
    * `logs/` - All service logs
    * `fail2ban/` - fail2ban-rs database
-   * `acme/` - acmetool state
+   * `acme/` - acme.sh account and certificate state
 
 5. Backup and restore:
    ```
@@ -214,7 +218,7 @@ A complete Docker Compose stack is included that provides:
 
 The Docker deployment uses two containers:
   * **prosody** - Runs Prosody XMPP server on localhost-only ports with PROXY protocol support enabled
-  * **xmpp-proxy-stack** - Bundles xmpp-proxy, nginx, fail2ban-rs, and supervisord using host networking for PROXY protocol support
+  * **xmpp-proxy-stack** - Bundles xmpp-proxy, nginx, and fail2ban-rs in a distroless image, supervised by Horust, using host networking for PROXY protocol support
 
 Prosody listens on localhost:15222 (C2S) and localhost:15269 (S2S). xmpp-proxy terminates TLS on the public ports, sends the PROXY protocol header, and forwards to Prosody. This preserves the real client IP for logging and rate limiting.
 
@@ -269,9 +273,12 @@ nano .env  # Set XMPP_DOMAIN and ACME_EMAIL
 
 2. Build and start:
 ```bash
-docker-compose build xmpp-proxy-stack
-docker-compose up -d
+docker compose build xmpp-proxy-stack
+docker compose up -d
 ```
+Build args `XMPP_PROXY_VERSION`, `FAIL2BAN_RS_VERSION`, and `HORUST_VERSION`
+(all set in `.env`) control which upstream release of each binary gets
+downloaded into the image.
 
 3. Verify services:
 ```bash
@@ -339,8 +346,12 @@ docker exec xmpp-proxy-stack /bin/busybox sh /app/acme.sh --renew -d your-domain
 4. Use self-signed for testing: Container falls back automatically
 
 **Volume permission errors:**
+The container currently runs as root, so this is uncommon, but if you see
+"No write permission" errors on startup, make sure the mounted directories
+are writable by whatever user owns them on the host:
 ```bash
-chown -R 65532:65532 /srv/xmpp/{certs,logs,fail2ban,acme}
+mkdir -p /srv/xmpp/{certs,logs,fail2ban,acme}
+chmod 777 /srv/xmpp/{certs,logs,fail2ban,acme}
 ```
 
 **View service logs:**
@@ -371,13 +382,13 @@ docker cp xmpp-proxy-stack:/tmp/configs.tar.gz ./configs-backup.tar.gz
 git pull origin main
 
 # Rebuild
-docker-compose build xmpp-proxy-stack
+docker compose build xmpp-proxy-stack
 
 # Stop old container
-docker-compose stop xmpp-proxy-stack
+docker compose stop xmpp-proxy-stack
 
 # Start new distroless container
-docker-compose up -d xmpp-proxy-stack
+docker compose up -d xmpp-proxy-stack
 ```
 
 ### 3. Verify Migration
@@ -398,17 +409,20 @@ docker exec xmpp-proxy-stack nginx-proxy-ctl list
 
 ### Rollback (if needed)
 
+The legacy Debian-slim build still exists as `xmpp-proxy-stack/Dockerfile`
+alongside `Dockerfile.distroless`, so rolling back is just a one-line
+edit to `docker-compose.yaml`, no file renaming needed:
+
 ```bash
 # Stop distroless container
-docker-compose stop xmpp-proxy-stack
+docker compose stop xmpp-proxy-stack
 
-# Rename Dockerfiles
-mv xmpp-proxy-stack/Dockerfile.distroless xmpp-proxy-stack/Dockerfile.distroless.new
-mv xmpp-proxy-stack/Dockerfile.debian xmpp-proxy-stack/Dockerfile
-
-# Update docker-compose.yaml to use Dockerfile instead of Dockerfile.distroless
+# In docker-compose.yaml, change:
+#   dockerfile: Dockerfile.distroless
+# to:
+#   dockerfile: Dockerfile
 
 # Rebuild
-docker-compose build xmpp-proxy-stack
-docker-compose up -d xmpp-proxy-stack
+docker compose build xmpp-proxy-stack
+docker compose up -d xmpp-proxy-stack
 ```
