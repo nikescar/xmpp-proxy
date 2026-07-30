@@ -73,8 +73,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: xmpp-proxy-stack
-          file: xmpp-proxy-stack/Dockerfile.distroless
-          # Dockerfile.distroless hardcodes x86_64-linux-gnu lib paths (see
+          file: xmpp-proxy-stack/Dockerfile
+          # Dockerfile hardcodes x86_64-linux-gnu lib paths (see
           # its own comments), so it can only be built for amd64 today.
           platforms: linux/amd64
           push: true
