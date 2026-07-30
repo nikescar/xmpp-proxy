@@ -1,7 +1,11 @@
-# XMPP Docker Compose
-# Uses the published ghcr.io/nikescar/xmpp-proxy-stack image - no build step
-# required. For building xmpp-proxy-stack from source instead (e.g. to test
-# local Dockerfile changes), use docker-compose.dev.yaml.
+# XMPP Docker Compose - development variant
+# Builds xmpp-proxy-stack from source (xmpp-proxy-stack/Dockerfile.distroless)
+# instead of pulling the published ghcr.io image. Use this when working on
+# the Dockerfile or nginx-proxy-ctl itself:
+#   docker compose -f docker-compose.dev.yaml build
+#   docker compose -f docker-compose.dev.yaml up -d
+# For a normal deployment, use docker-compose.yaml instead (no build step,
+# pulls ghcr.io/nikescar/xmpp-proxy-stack).
 #
 # Base configuration - do not edit directly.
 # Put customizations in docker-compose.override.yaml instead.
@@ -43,7 +47,13 @@ services:
       start_period: 10s
 
   xmpp-proxy-stack:
-    image: ghcr.io/nikescar/xmpp-proxy-stack:${XMPP_PROXY_STACK_TAG:-latest}
+    build:
+      context: ./xmpp-proxy-stack
+      dockerfile: Dockerfile.distroless
+      args:
+        XMPP_PROXY_VERSION: ${XMPP_PROXY_VERSION:-latest}
+        FAIL2BAN_RS_VERSION: ${FAIL2BAN_RS_VERSION:-latest}
+        HORUST_VERSION: ${HORUST_VERSION:-0.1.13}
     container_name: xmpp-proxy-stack
     restart: unless-stopped
     # Uses host networking for PROXY protocol support

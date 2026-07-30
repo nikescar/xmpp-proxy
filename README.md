@@ -184,14 +184,19 @@ A complete Docker Compose stack is included that provides:
    ```
    Set at minimum: `XMPP_DOMAIN`, `ACME_EMAIL`
 
-2. Build and start the stack:
+2. Start the stack (pulls the published `ghcr.io/nikescar/xmpp-proxy-stack`
+   image, no build required):
    ```
-   docker compose build
    docker compose up -d
    ```
-   Re-run `docker compose build` after pulling repo updates - `up -d` alone
-   only builds an image if none exists yet, it won't pick up Dockerfile
-   changes on its own.
+   Re-run `docker compose pull` after pulling repo updates to pick up a
+   newer image. To build xmpp-proxy-stack from source instead - e.g. when
+   working on the Dockerfile or `nginx-proxy-ctl` - use
+   `docker-compose.dev.yaml`:
+   ```
+   docker compose -f docker-compose.dev.yaml build
+   docker compose -f docker-compose.dev.yaml up -d
+   ```
 
 3. The stack exposes:
    * `5222/tcp` - XMPP C2S (STARTTLS)
@@ -271,14 +276,18 @@ cp .env.example .env
 nano .env  # Set XMPP_DOMAIN and ACME_EMAIL
 ```
 
-2. Build and start:
+2. Start (pulls `ghcr.io/nikescar/xmpp-proxy-stack:${XMPP_PROXY_STACK_TAG:-latest}`):
 ```bash
-docker compose build xmpp-proxy-stack
 docker compose up -d
+```
+To build from source instead, use `docker-compose.dev.yaml`:
+```bash
+docker compose -f docker-compose.dev.yaml build xmpp-proxy-stack
+docker compose -f docker-compose.dev.yaml up -d
 ```
 Build args `XMPP_PROXY_VERSION`, `FAIL2BAN_RS_VERSION`, and `HORUST_VERSION`
 (all set in `.env`) control which upstream release of each binary gets
-downloaded into the image.
+downloaded into the image when building from source.
 
 3. Verify services:
 ```bash
@@ -381,14 +390,15 @@ docker cp xmpp-proxy-stack:/tmp/configs.tar.gz ./configs-backup.tar.gz
 # Pull latest code
 git pull origin main
 
-# Rebuild
-docker compose build xmpp-proxy-stack
+# Rebuild (docker-compose.dev.yaml builds from source; docker-compose.yaml
+# pulls the published ghcr.io image instead - see Quick Start above)
+docker compose -f docker-compose.dev.yaml build xmpp-proxy-stack
 
 # Stop old container
 docker compose stop xmpp-proxy-stack
 
 # Start new distroless container
-docker compose up -d xmpp-proxy-stack
+docker compose -f docker-compose.dev.yaml up -d xmpp-proxy-stack
 ```
 
 ### 3. Verify Migration
@@ -411,18 +421,18 @@ docker exec xmpp-proxy-stack nginx-proxy-ctl list
 
 The legacy Debian-slim build still exists as `xmpp-proxy-stack/Dockerfile`
 alongside `Dockerfile.distroless`, so rolling back is just a one-line
-edit to `docker-compose.yaml`, no file renaming needed:
+edit to `docker-compose.dev.yaml`, no file renaming needed:
 
 ```bash
 # Stop distroless container
 docker compose stop xmpp-proxy-stack
 
-# In docker-compose.yaml, change:
+# In docker-compose.dev.yaml, change:
 #   dockerfile: Dockerfile.distroless
 # to:
 #   dockerfile: Dockerfile
 
 # Rebuild
-docker compose build xmpp-proxy-stack
-docker compose up -d xmpp-proxy-stack
+docker compose -f docker-compose.dev.yaml build xmpp-proxy-stack
+docker compose -f docker-compose.dev.yaml up -d xmpp-proxy-stack
 ```
