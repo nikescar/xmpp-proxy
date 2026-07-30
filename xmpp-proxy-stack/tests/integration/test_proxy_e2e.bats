@@ -92,7 +92,8 @@ teardown_file() {
 
     run curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/temp/
 
-    [ "$output" = "404" ]
+    # After removal, path reverts to default HTTP→HTTPS redirect (301)
+    [ "$output" = "301" ]
 }
 
 @test "nginx-proxy-ctl validate confirms valid config" {
