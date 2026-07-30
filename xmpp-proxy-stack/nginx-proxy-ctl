@@ -1,7 +1,10 @@
-#!/bin/bash
+#!/bin/busybox sh
 # nginx-proxy-ctl - Dynamic nginx proxy configuration manager
+#
+# POSIX sh (not bash): this runs inside a distroless image via busybox ash,
+# which has no [[ ]], no =~ regex, and no ((...)) arithmetic.
 
-set -euo pipefail
+set -eu
 
 # Validate location path
 validate_location_path() {
@@ -12,10 +15,13 @@ validate_location_path() {
         return 1
     fi
 
-    if [[ ! "$path" =~ ^/ ]]; then
-        echo "ERROR: Location path must start with /" >&2
-        return 1
-    fi
+    case "$path" in
+        /*) ;;
+        *)
+            echo "ERROR: Location path must start with /" >&2
+            return 1
+            ;;
+    esac
 
     return 0
 }
@@ -29,10 +35,13 @@ validate_upstream_url() {
         return 1
     fi
 
-    if [[ ! "$url" =~ ^https?:// ]]; then
-        echo "ERROR: Upstream URL must start with http:// or https://" >&2
-        return 1
-    fi
+    case "$url" in
+        http://*|https://*) ;;
+        *)
+            echo "ERROR: Upstream URL must start with http:// or https://" >&2
+            return 1
+            ;;
+    esac
 
     return 0
 }
@@ -47,10 +56,12 @@ generate_proxy_config() {
     local custom_headers=""
 
     # Add websocket headers if enabled
-    if [[ "$options" == *"websocket"* ]]; then
-        websocket_headers="proxy_set_header Upgrade \$http_upgrade;
+    case "$options" in
+        *websocket*)
+            websocket_headers="proxy_set_header Upgrade \$http_upgrade;
     proxy_set_header Connection \"upgrade\";"
-    fi
+            ;;
+    esac
 
     # Set default timeout if not provided
     local timeout="${PROXY_TIMEOUT:-60s}"
@@ -62,12 +73,15 @@ generate_proxy_config() {
     export CUSTOM_HEADERS="$custom_headers"
     export PROXY_TIMEOUT="$timeout"
 
-    envsubst < "$TEMPLATE_FILE"
+    # Restrict substitution to just these placeholders - the template also
+    # contains literal nginx runtime variables ($host, $remote_addr, etc.)
+    # that must NOT be touched, or an unrestricted envsubst wipes them out
+    envsubst '${LOCATION_PATH} ${UPSTREAM_URL} ${WEBSOCKET_HEADERS} ${CUSTOM_HEADERS} ${PROXY_TIMEOUT}' < "$TEMPLATE_FILE"
 }
 
 # Configuration
 NGINX_CONF_DIR="${NGINX_CONF_DIR:-/etc/nginx/conf.d}"
-TEMPLATE_FILE="${TEMPLATE_FILE:-/etc/nginx/templates/location-proxy.conf.template}"
+TEMPLATE_FILE="${TEMPLATE_FILE:-/etc/templates/location-proxy.conf.template}"
 NGINX_BIN="${NGINX_BIN:-/usr/sbin/nginx}"
 
 # Add a new proxy location
@@ -81,7 +95,7 @@ add_proxy() {
     validate_upstream_url "$upstream" || return 1
 
     # Check for duplicate location
-    local hash=$(echo -n "$location" | md5sum | cut -d' ' -f1)
+    local hash=$(echo -n "$location" | md5sum | awk '{print $1}')
     local config_file="$NGINX_CONF_DIR/proxy-$hash.conf"
 
     if [ -f "$config_file" ]; then
@@ -115,7 +129,7 @@ remove_proxy() {
     local location="$1"
 
     # Find config file by location hash
-    local hash=$(echo -n "$location" | md5sum | cut -d' ' -f1)
+    local hash=$(echo -n "$location" | md5sum | awk '{print $1}')
     local config_file="$NGINX_CONF_DIR/proxy-$hash.conf"
 
     if [ ! -f "$config_file" ]; then
@@ -140,11 +154,11 @@ list_proxies() {
     for config_file in "$NGINX_CONF_DIR"/proxy-*.conf; do
         if [ -f "$config_file" ]; then
             # Extract location and upstream from config
-            local location=$(grep -oP 'location \K[^ ]+' "$config_file" | head -1)
-            local upstream=$(grep -oP 'proxy_pass \K[^;]+' "$config_file" | head -1)
+            local location=$(awk '/location/{print $2; exit}' "$config_file")
+            local upstream=$(awk '/proxy_pass/{sub(";", "", $2); print $2; exit}' "$config_file")
 
             echo "$location -> $upstream"
-            ((count++))
+            count=$((count + 1))
         fi
     done
 
@@ -259,7 +273,9 @@ main() {
     esac
 }
 
-# Only run main if executed directly (not sourced for tests)
-if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+# Only run main if executed directly (not sourced for tests). Tests source
+# this file under bash with NGINX_PROXY_CTL_SOURCED set, so this check avoids
+# relying on bash-only BASH_SOURCE, which busybox ash does not have.
+if [ -z "${NGINX_PROXY_CTL_SOURCED:-}" ]; then
     main "$@"
 fi

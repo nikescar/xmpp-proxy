@@ -315,7 +315,7 @@ docker exec xmpp-proxy-stack /bin/busybox ls -la /certs/
 
 Manual renewal (if needed):
 ```bash
-docker exec xmpp-proxy-stack /app/acme.sh --renew -d your-domain.com --force
+docker exec xmpp-proxy-stack /bin/busybox sh /app/acme.sh --renew -d your-domain.com --force
 ```
 
 ### Architecture

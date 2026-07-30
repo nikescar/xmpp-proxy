@@ -8,6 +8,7 @@ setup() {
     export NGINX_BIN="nginx"
     export TEMPLATE_FILE="$PROJECT_ROOT/templates/location-proxy.conf.template"
     mkdir -p "$NGINX_CONF_DIR"
+    export NGINX_PROXY_CTL_SOURCED=1
     source "$PROJECT_ROOT/nginx-proxy-ctl"
 
     # Clear mock state

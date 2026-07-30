@@ -3,6 +3,7 @@
 setup() {
     export TEST_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)"
     export PROJECT_ROOT="$(cd "$TEST_DIR/../.." && pwd)"
+    export NGINX_PROXY_CTL_SOURCED=1
     source "$PROJECT_ROOT/nginx-proxy-ctl"
 }
 
