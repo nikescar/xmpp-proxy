@@ -21,7 +21,7 @@ setup_file() {
     # Start container
     echo "Starting test container..." >&2
     cd "$TEST_DIR/.."
-    docker-compose -f docker-compose.test.yml up -d
+    docker compose -f docker-compose.test.yml up -d
 
     # Wait for container to start
     sleep 10
@@ -29,8 +29,8 @@ setup_file() {
 
 teardown_file() {
     cd "$TEST_DIR/.."
-    docker-compose -f docker-compose.test.yml logs > /tmp/xmpp-test-logs.txt 2>&1 || true
-    docker-compose -f docker-compose.test.yml down -v 2>/dev/null || true
+    docker compose -f docker-compose.test.yml logs > /tmp/xmpp-test-logs.txt 2>&1 || true
+    docker compose -f docker-compose.test.yml down -v 2>/dev/null || true
 
     # Clean up test directories. acme.sh writes root-owned files under the
     # acme volume, so remove via a container (root) rather than the host shell.
