@@ -11,7 +11,7 @@ setup_file() {
     if ! docker images xmpp-proxy-stack:test --format "{{.Repository}}" | grep -q "xmpp-proxy-stack"; then
         echo "Building test image..." >&2
         cd "$PROJECT_ROOT"
-        docker build -t xmpp-proxy-stack:test -f Dockerfile.distroless .
+        docker build -t xmpp-proxy-stack:test -f Dockerfile .
     fi
 
     # Create test directories
