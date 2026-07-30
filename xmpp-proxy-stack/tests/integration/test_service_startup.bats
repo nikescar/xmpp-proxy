@@ -71,6 +71,35 @@ teardown_file() {
     # curl -s http://localhost:80/health | grep -q "healthy"
 }
 
+@test "xmpp-proxy process is running" {
+    sleep 5
+    run docker exec xmpp-proxy-stack-test /bin/busybox ps aux
+
+    [[ "$output" =~ "xmpp-proxy" ]]
+}
+
+@test "xmpp-proxy listens on expected ports" {
+    # network_mode: host, so ports show up on the host directly
+    run bash -c "ss -nltup | grep ':5222 '"
+    [ "$status" -eq 0 ]
+
+    run bash -c "ss -nltup | grep ':5223 '"
+    [ "$status" -eq 0 ]
+
+    run bash -c "ss -nltup | grep ':5269 '"
+    [ "$status" -eq 0 ]
+
+    run bash -c "ss -nlup | grep ':443 '"
+    [ "$status" -eq 0 ]
+}
+
+@test "fail2ban-rs process is running" {
+    sleep 5
+    run docker exec xmpp-proxy-stack-test /bin/busybox ps aux
+
+    [[ "$output" =~ "fail2ban-rs" ]]
+}
+
 @test "service logs are being written" {
     sleep 5
 

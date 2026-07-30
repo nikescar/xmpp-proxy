@@ -9,6 +9,9 @@ services:
       XMPP_DOMAIN: test.example.com
       ACME_EMAIL: test@example.com
       ACME_SERVER: https://acme-staging-v02.api.letsencrypt.org/directory
+      FAIL2BAN_MAX_RETRY: 5
+      FAIL2BAN_BAN_TIME: 1h
+      FAIL2BAN_FIND_TIME: 10m
     volumes:
       - /tmp/xmpp-test/certs:/certs
       - /tmp/xmpp-test/logs:/logs

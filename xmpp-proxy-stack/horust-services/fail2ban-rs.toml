@@ -1,4 +1,4 @@
-command = "/usr/local/bin/fail2ban-rs --config /etc/fail2ban-rs/config.toml"
+command = "/usr/local/bin/fail2ban-rs run --config /etc/fail2ban-rs/config.toml"
 start-delay = "3s"
 start-after = ["xmpp-proxy.toml"]
 stdout = "/logs/fail2ban-rs-stdout.log"

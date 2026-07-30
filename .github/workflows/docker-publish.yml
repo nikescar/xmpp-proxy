@@ -62,6 +62,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern=latest
             type=sha,format=short,prefix=sha-
             type=ref,event=branch
 
