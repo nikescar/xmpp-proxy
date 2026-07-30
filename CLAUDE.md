@@ -117,3 +117,207 @@ All data stored in `/srv/xmpp/`:
    - xmpp-proxy (waits for certs to exist)
    - fail2ban-rs (reads xmpp-proxy logs)
    - acme.sh cron (daily renewal check)
+
+## 2. Component: xmpp-proxy (Rust)
+
+### 2.1 Feature Flag System
+
+**Direction flags (pick one or more):**
+- `c2s-incoming` - Accept incoming client-to-server connections
+- `c2s-outgoing` - Create outgoing client-to-server connections
+- `s2s-incoming` - Accept incoming server-to-server connections
+- `s2s-outgoing` - Create outgoing server-to-server connections
+
+**Protocol flags (pick one or more):**
+- `tls` - STARTTLS and Direct TLS support
+- `quic` - QUIC protocol support (XEP-0467)
+- `websocket` - WebSocket support (RFC 7395 for C2S, XEP-0468 for S2S)
+  - Note: `websocket` + incoming direction also enables incoming TLS support
+- `webtransport` - WebTransport support (W3C spec)
+  - **Requires:** Must also enable `quic` feature
+
+**TLS CA root certificates (pick exactly one, unless only `c2s-incoming`):**
+- `tls-ca-roots-native` - Load CA certificates from operating system
+  - Use when: Deploying on systems with managed CA bundles
+  - Pros: Automatically picks up OS updates
+  - Cons: Depends on OS certificate store
+- `tls-ca-roots-bundled` - Bundle webpki-roots CA certificates in binary
+  - Use when: Need reproducible builds, static binaries
+  - Pros: Self-contained, no OS dependency
+  - Cons: Must rebuild to update CA bundle
+
+**Cannot use both together.** Mutually exclusive by design.
+
+**TLS cryptographic provider (pick exactly one):**
+- `tls-ring` - Use ring cryptography library (default)
+- `tls-aws-lc-rs` - Use AWS libcrypto (aws-lc) via Rust bindings
+- `tls-aws-lc-rs-fips` - Use FIPS-validated AWS libcrypto
+
+**Cannot use multiple TLS providers together.**
+
+**Optional features:**
+- `logging` - Enables env_logger and structured logging
+- `systemd` - Socket activation support
+- `console` - Tokio console debugging support
+
+**Feature flag validation:**
+- Use `./check-all-features.sh` to verify all valid combinations compile
+- Script tests all supported permutations automatically
+- Run before committing changes that affect feature-gated code
+
+### 2.2 Building Workflows
+
+**Default build (all features):**
+```bash
+cargo build --release
+```
+
+**Custom feature build examples:**
+
+Reverse proxy only (STARTTLS/TLS):
+```bash
+cargo build --release --no-default-features \
+  --features c2s-incoming,s2s-incoming,tls,tls-ca-roots-native,tls-ring
+```
+
+Reverse proxy with QUIC support:
+```bash
+cargo build --release --no-default-features \
+  --features c2s-incoming,s2s-incoming,tls,quic,tls-ca-roots-native,tls-ring
+```
+
+Outgoing proxy only:
+```bash
+cargo build --release --no-default-features \
+  --features c2s-outgoing,s2s-outgoing,tls,quic,tls-ca-roots-bundled,tls-ring
+```
+
+Full-featured build with WebSocket and WebTransport:
+```bash
+cargo build --release --no-default-features \
+  --features c2s-incoming,c2s-outgoing,s2s-incoming,s2s-outgoing,\
+tls,quic,websocket,webtransport,logging,tls-ca-roots-native,tls-ring
+```
+
+**When to use custom builds:**
+- Minimize binary size for specific deployment scenarios
+- Test feature-gated code in isolation
+- Debug feature flag interactions
+
+### 2.3 Testing
+
+**Unit tests:**
+```bash
+cargo test
+```
+
+**Network-dependent tests:**
+```bash
+cargo test --features net-test
+```
+- May be flaky (depends on external network)
+- Tests SRV resolution, DNS lookups, external connectivity
+
+**Feature-specific tests:**
+- Some tests are feature-gated
+- Example: WebSocket tests only compile with `websocket` feature
+- Run full build before assuming test failure is code issue
+
+**Pre-commit requirements:**
+- All `cargo test` must pass
+- `./check-all-features.sh` should succeed
+- Integration tests (`integration/test.sh`) must pass
+
+### 2.4 Code Structure
+
+**Core files:**
+- `src/main.rs` - Entry point
+  - Command-line argument parsing (config file path)
+  - Config file loading (TOML deserialization)
+  - Logging initialization
+  - Signal handling (graceful shutdown)
+  - Launches incoming/outgoing listeners based on config
+
+- `src/context.rs` - Shared context and configuration
+  - Runtime configuration state
+  - Shared resources across connections
+
+- `src/in_out.rs` - Core proxy dispatch logic
+  - Incoming connection handling
+  - Outgoing connection establishment
+  - Protocol negotiation
+  - Bidirectional data forwarding
+
+**Protocol-specific modules:**
+- `src/tls/` - STARTTLS and Direct TLS implementation
+  - Certificate loading and validation
+  - TLS handshake handling
+  - Stream wrapping
+
+- `src/quic/` - QUIC protocol support
+  - Quinn-based QUIC implementation
+  - Bidirectional stream handling
+  - Connection migration
+
+- `src/websocket/` - WebSocket transport
+  - HTTP upgrade handling
+  - WebSocket frame processing
+  - Integration with TLS
+
+- `src/webtransport/` - WebTransport implementation
+  - Built on QUIC foundation
+  - HTTP/3 upgrade mechanism
+
+**XMPP-specific logic:**
+- `src/srv.rs` - Service discovery
+  - SRV record resolution (_xmpp-client._tcp, _xmpp-server._tcp)
+  - host-meta and host-meta2 lookups (XEP-0156)
+  - POSH (PKIX Over Secure HTTP) support (RFC 7711)
+  - Fallback chain for connection establishment
+
+- `src/stanzafilter.rs` - Stanza size limiting
+  - **Key constraint:** No full XML parser
+  - Byte-stream analysis to detect stanza boundaries
+  - Configurable size limits
+  - Minimal overhead
+
+- `src/verify.rs` - S2S certificate validation
+  - Domain verification for server-to-server
+  - Certificate chain validation
+  - Integration with CA roots
+
+**Utility modules:**
+- `src/slicesubsequence.rs` - Byte slice utilities
+- `src/systemd.rs` - Systemd socket activation
+- `src/common/` - Shared types and helpers
+
+### 2.5 Common Development Tasks
+
+**Adding new protocol support:**
+1. Create new module in `src/` (e.g., `src/newproto/`)
+2. Add feature flag to `Cargo.toml` `[features]`
+3. Implement protocol-specific connection handling
+4. Integrate into `in_out.rs` dispatch logic (feature-gated)
+5. Add tests (unit + integration)
+6. Update `check-all-features.sh` if new feature combinations
+
+**Modifying stanza filtering:**
+- Edit `src/stanzafilter.rs`
+- **Critical:** Cannot use full XML parser (performance requirement)
+- Work with byte streams, detect element boundaries
+- Test with various stanza sizes and nesting levels
+- Verify no performance regression
+
+**Updating dependencies:**
+1. Modify `Cargo.toml`
+2. Run `cargo update`
+3. Check security policy: `cargo deny check`
+4. Review `deny.toml` for any new violations
+5. Run full test suite
+6. Test feature flag combinations
+
+**Debugging tips:**
+- Enable `logging` feature for detailed logs
+- Use `RUST_LOG=debug` environment variable
+- Enable `console` feature + tokio-console for async debugging
+- Check for feature flag mismatches if code doesn't compile
