@@ -1,5 +1,5 @@
 # XMPP Docker Compose - development variant
-# Builds xmpp-proxy-stack from source (xmpp-proxy-stack/Dockerfile.distroless)
+# Builds xmpp-proxy-stack from source (xmpp-proxy-stack/Dockerfile)
 # instead of pulling the published ghcr.io image. Use this when working on
 # the Dockerfile or nginx-proxy-ctl itself:
 #   docker compose -f docker-compose.dev.yaml build
@@ -49,7 +49,7 @@ services:
   xmpp-proxy-stack:
     build:
       context: ./xmpp-proxy-stack
-      dockerfile: Dockerfile.distroless
+      dockerfile: Dockerfile
       args:
         XMPP_PROXY_VERSION: ${XMPP_PROXY_VERSION:-latest}
         FAIL2BAN_RS_VERSION: ${FAIL2BAN_RS_VERSION:-latest}
