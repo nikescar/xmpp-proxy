@@ -1,0 +1,18 @@
+services:
+  xmpp-proxy-stack-test:
+    image: xmpp-proxy-stack:test
+    container_name: xmpp-proxy-stack-test
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    environment:
+      XMPP_DOMAIN: test.example.com
+      ACME_EMAIL: test@example.com
+      ACME_SERVER: https://acme-staging-v02.api.letsencrypt.org/directory
+    volumes:
+      - /tmp/xmpp-test/certs:/certs
+      - /tmp/xmpp-test/logs:/logs
+      - /tmp/xmpp-test/fail2ban:/var/lib/fail2ban-rs
+      - /tmp/xmpp-test/acme:/var/lib/acme
+    labels:
+      - "xmpp-proxy-test=true"
