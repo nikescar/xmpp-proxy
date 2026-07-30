@@ -10,7 +10,7 @@ backoff = "5s"
 attempts = 0
 
 [healthiness]
-http-endpoint = "http://localhost:80/"
+http-endpoint = "http://localhost:80/health"
 
 [termination]
 signal = "TERM"

@@ -100,26 +100,33 @@ RUN ARCH=$(uname -m) && \
     curl -fsSL "$DOWNLOAD_URL" -o /usr/local/bin/xmpp-proxy && \
     chmod +x /usr/local/bin/xmpp-proxy
 
-# Download fail2ban-rs (create placeholder if not available)
+# Download fail2ban-rs. Release assets are versioned tar.gz archives named
+# fail2ban-rs-<version>-linux-<amd64|arm64>.tar.gz (not a bare binary at a
+# stable "latest" filename like xmpp-proxy uses), so resolve the actual tag
+# via the GitHub API first when FAIL2BAN_RS_VERSION=latest, then extract the
+# binary out of the archive.
 RUN ARCH=$(uname -m) && \
     if [ "$ARCH" = "x86_64" ]; then \
-        F2B_ARCH="x86_64"; \
+        F2B_ARCH="amd64"; \
     elif [ "$ARCH" = "aarch64" ]; then \
-        F2B_ARCH="aarch64"; \
+        F2B_ARCH="arm64"; \
     else \
         echo "Unsupported architecture: $ARCH" >&2; \
         exit 1; \
     fi && \
     if [ "$FAIL2BAN_RS_VERSION" = "latest" ]; then \
-        DOWNLOAD_URL="https://github.com/aejimmi/fail2ban-rs/releases/latest/download/fail2ban-rs-${F2B_ARCH}-unknown-linux-musl"; \
+        TAG=$(curl -fsSL https://api.github.com/repos/aejimmi/fail2ban-rs/releases/latest | \
+            grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/'); \
     else \
-        DOWNLOAD_URL="https://github.com/aejimmi/fail2ban-rs/releases/download/${FAIL2BAN_RS_VERSION}/fail2ban-rs-${F2B_ARCH}-unknown-linux-musl"; \
+        TAG="$FAIL2BAN_RS_VERSION"; \
     fi && \
+    VER="${TAG#v}" && \
+    DOWNLOAD_URL="https://github.com/aejimmi/fail2ban-rs/releases/download/${TAG}/fail2ban-rs-${VER}-linux-${F2B_ARCH}.tar.gz" && \
     echo "Downloading fail2ban-rs from ${DOWNLOAD_URL}..." && \
-    (curl -fsSL "$DOWNLOAD_URL" -o /usr/local/bin/fail2ban-rs || \
-     (echo "fail2ban-rs not available, creating placeholder..." && \
-      echo '#!/bin/sh' > /usr/local/bin/fail2ban-rs && \
-      echo 'echo "fail2ban-rs placeholder - binary not available for download"' >> /usr/local/bin/fail2ban-rs)) && \
+    curl -fsSL "$DOWNLOAD_URL" -o /tmp/fail2ban-rs.tar.gz && \
+    tar -xzf /tmp/fail2ban-rs.tar.gz -C /tmp && \
+    find /tmp -type f -name fail2ban-rs -exec mv {} /usr/local/bin/fail2ban-rs \; && \
+    rm -rf /tmp/fail2ban-rs.tar.gz /tmp/fail2ban-rs-*-linux-* && \
     chmod +x /usr/local/bin/fail2ban-rs
 
 ##
@@ -133,7 +140,8 @@ RUN apt-get update && \
         gettext-base \
         openssl \
         curl \
-        ca-certificates && \
+        ca-certificates \
+        nftables && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -201,6 +209,10 @@ RUN ["/bin/busybox", "rm", "-f", "/etc/nginx/conf.d/default.conf"]
 COPY --from=tools-builder /usr/bin/openssl /usr/bin/openssl
 COPY --from=tools-builder /usr/bin/curl /usr/bin/curl
 COPY --from=tools-builder /usr/bin/envsubst /usr/bin/envsubst
+# nft - fail2ban-rs's nftables backend shells out to this. Container runs
+# with network_mode: host + cap_add: NET_ADMIN, so this operates on the
+# host's real netfilter tables, not an isolated namespace.
+COPY --from=tools-builder /usr/sbin/nft /usr/sbin/nft
 COPY --from=tools-builder /usr/lib/x86_64-linux-gnu/*.so* /usr/lib/x86_64-linux-gnu/
 COPY --from=tools-builder /etc/ssl/openssl.cnf /etc/ssl/openssl.cnf
 COPY --from=tools-builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
