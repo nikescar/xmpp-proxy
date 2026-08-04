@@ -23,7 +23,13 @@ plugin_paths = { "/usr/lib/prosody/community" }
 proxy_trusted_proxies = {
     "127.0.0.1",      -- localhost
     "::1",            -- localhost IPv6
-    "172.30.0.0/16"   -- Docker bridge network (xmpp-internal)
+    -- Docker bridge network (xmpp-internal). docker-compose.yaml doesn't
+    -- pin a subnet, so Docker auto-assigns one on network creation - it is
+    -- NOT reliably 172.30.0.0/16 (observed 172.25.0.0/16 in practice,
+    -- which silently dropped every c2s/s2s connection with
+    -- "Dropped connection from untrusted proxy"). Trust the whole range
+    -- Docker draws bridge subnets from instead of one guessed /16.
+    "172.16.0.0/12"
 }
 
 -- Configure which ports expect PROXY protocol headers
