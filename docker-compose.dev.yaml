@@ -11,6 +11,31 @@
 # Put customizations in docker-compose.override.yaml instead.
 
 services:
+  # Init service to set up Prosody community modules
+  # Runs once on first start, then exits. Prosody depends on this completing.
+  prosody-modules-init:
+    image: alpine:latest
+    container_name: prosody-modules-init
+    restart: "no"
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+    command: >
+      sh -c '
+        echo "=== Prosody Modules Initialization ===" &&
+        if [ -f prosody-modules/mod_admin_web2/mod_admin_web2.lua ]; then
+          echo "✓ prosody-modules already initialized" &&
+          exit 0
+        fi &&
+        echo "Installing mercurial..." &&
+        apk add --no-cache mercurial &&
+        echo "Cloning prosody-modules repository..." &&
+        rm -rf prosody-modules &&
+        hg clone https://hg.prosody.im/prosody-modules prosody-modules &&
+        echo "✓ Modules cloned successfully" &&
+        ls -la prosody-modules/ | head -20
+      '
+
   prosody:
     image: prosodyim/prosody:13.0
     container_name: prosody
@@ -45,6 +70,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    depends_on:
+      prosody-modules-init:
+        condition: service_completed_successfully
 
   xmpp-proxy-stack:
     build:
