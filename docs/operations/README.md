@@ -8,6 +8,7 @@ Guides for controlling each component of the running stack via `docker exec`
 - [nginx.md](./nginx.md) — nginx binary (config test/reload/stop, logs, health check)
 - [nginx-proxy-ctl.md](./nginx-proxy-ctl.md) — dynamic reverse-proxy route management (`add`/`remove`/`list`/`validate`)
 - [xmpp-proxy-control.md](./xmpp-proxy-control.md) — signal-based control (cert/key reload via SIGHUP, full restart via horust)
+- [fail2ban-rs.md](./fail2ban-rs.md) — `fail2ban-rs` CLI over its control socket (status, ban/unban, reload, filter testing)
 
 ## Quick reference
 
@@ -17,6 +18,7 @@ Guides for controlling each component of the running stack via `docker exec`
 | nginx | `xmpp-proxy-stack` | No (busybox only) | `docker exec xmpp-proxy-stack /usr/sbin/nginx -s <signal>` |
 | Dynamic nginx routes | `xmpp-proxy-stack` | No (busybox only) | `docker exec xmpp-proxy-stack nginx-proxy-ctl <cmd>` |
 | xmpp-proxy | `xmpp-proxy-stack` | No (busybox only) | `docker exec xmpp-proxy-stack /bin/busybox kill -HUP\|-TERM <pid>` |
+| fail2ban-rs | `xmpp-proxy-stack` | No (busybox only) | `docker exec xmpp-proxy-stack fail2ban-rs <cmd>` (own control socket) |
 
 All four services inside `xmpp-proxy-stack` (nginx, xmpp-proxy, fail2ban-rs,
 acme cron) are supervised by a single horust instance, so
