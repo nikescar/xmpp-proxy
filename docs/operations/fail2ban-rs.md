@@ -22,6 +22,35 @@ state, not just the config file, and require the daemon to be up.
 docker exec xmpp-proxy-stack /bin/busybox ls /var/run/fail2ban-rs/
 ```
 
+## Jails configured in this stack
+
+Defined in `xmpp-proxy-stack/templates/fail2ban-rs-config.toml.template`:
+
+| Jail | Log source | Ports protected | Trigger |
+|---|---|---|---|
+| `xmpp-auth` | `/logs/prosody.log` | 5222, 5223 (C2S) | Failed authentication / SASL |
+| `xmpp-s2s-abuse` | `/logs/prosody.log` | 5269 (S2S) | Connection rate limit, invalid XML |
+| `xmpp-stanza-flood` | `/logs/xmpp-proxy.log` | (xmpp-proxy's own listeners) | Oversized stanzas, rate limit |
+| `nginx-scan` | `/logs/nginx-access.log` | 80, 443 (nginx) | Requests for known exploit paths (`wp-login`, `.env`, `.git`, `phpmyadmin`, etc.) — low threshold (2 hits/10m), since a single hit is never legitimate |
+| `nginx-abuse` | `/logs/nginx-access.log` | 80, 443 (nginx) | Repeated 400/401/403/413 responses on any path — higher threshold (15 hits/2m) |
+
+`nginx-scan`/`nginx-abuse` close the gap where nginx's public ports (ACME,
+`/health`, redirects, and any `nginx-proxy-ctl`-added or `ENABLE_WEB_ADMIN`
+reverse-proxy routes) previously had no fail2ban-rs coverage at all — only
+xmpp-proxy's ports did.
+
+`nginx-abuse` deliberately excludes HTTP 404 from its status-code match: on
+this stack, Prosody's `admin_web2` serves its static assets
+(`bootstrap-1.4.0.min.css`, `jquery`, `strophe.min.js`, `adhoc.js`) under
+paths that 404 on every legitimate page load through the nginx reverse proxy
+(a pre-existing asset-path issue, unrelated to abuse). Counting 404s in a
+generic jail would ban the real admin under normal browser use — verified
+against a live 43k-line `nginx-access.log` with `dry-run`, where the actual
+admin IP racked up 86 hits under a 404-inclusive pattern and zero under the
+403/401/400/413-only one. 404-based exploit-path scanning is still covered,
+just narrowly, by `nginx-scan`'s explicit path list instead of a blanket
+status-code match.
+
 ## Checking status and stats
 
 ```bash
@@ -39,7 +68,9 @@ docker exec xmpp-proxy-stack /usr/local/bin/fail2ban-rs stats
   "jails": {
     "xmpp-auth": { "active_bans": 0, "total_bans": 0, "total_failures": 0 },
     "xmpp-s2s-abuse": { "active_bans": 0, "total_bans": 0, "total_failures": 0 },
-    "xmpp-stanza-flood": { "active_bans": 0, "total_bans": 0, "total_failures": 0 }
+    "xmpp-stanza-flood": { "active_bans": 0, "total_bans": 0, "total_failures": 0 },
+    "nginx-scan": { "active_bans": 0, "total_bans": 0, "total_failures": 0 },
+    "nginx-abuse": { "active_bans": 0, "total_bans": 0, "total_failures": 0 }
   },
   "total_bans": 0,
   "total_failures": 0,

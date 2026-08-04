@@ -54,3 +54,44 @@ max_retry = 3
 find_time = "1m"
 ban_time = "30m"
 backend = "nftables"
+
+# Nginx Exploit/Scanner Path Probing (port 80/443)
+# A single hit on any of these paths is never legitimate traffic for this
+# stack - low max_retry, longer ban than the generic abuse jail below.
+[jail.nginx-scan]
+enabled = true
+log_path = "/logs/nginx-access.log"
+date_format = "common"
+filter = [
+    '<HOST> .*"(GET|POST) /(wp-login|wp-admin|xmlrpc\.php|\.env|phpmyadmin|\.git|geoserver|\.aws|\.ssh|cgi-bin|vendor/phpunit|actuator|solr|console)',
+]
+max_retry = 2
+find_time = "10m"
+ban_time = "1h"
+backend = "nftables"
+port = ["80", "443"]
+protocol = "tcp"
+ignoreip = ["127.0.0.1/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+
+# Nginx Generic HTTP Abuse (port 80/443)
+# Repeated malformed/rejected requests across any proxied or unmatched path -
+# catches broad scanning/flooding that nginx-scan's path list doesn't cover.
+# Deliberately excludes 404: on this stack, admin_web2's static assets
+# (bootstrap/jquery/strophe/adhoc.js under /prosody/admin/) 404 on every
+# legitimate page load (a pre-existing asset-path bug, unrelated to abuse),
+# so counting 404s here would ban the real admin. nginx-scan's path-specific
+# patterns already cover 404-based exploit-probe scanning instead.
+[jail.nginx-abuse]
+enabled = true
+log_path = "/logs/nginx-access.log"
+date_format = "common"
+filter = [
+    '<HOST> -.*" (400|401|403|413) ',
+]
+max_retry = 15
+find_time = "2m"
+ban_time = "30m"
+backend = "nftables"
+port = ["80", "443"]
+protocol = "tcp"
+ignoreip = ["127.0.0.1/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
