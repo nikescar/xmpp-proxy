@@ -1,5 +1,8 @@
 -- Prosody PROXY protocol configuration
--- This file is mounted at /etc/prosody/conf.d/proxy.cfg.lua
+-- Rendered by the prosody-config-init service (substitutes ${XMPP_DOMAIN})
+-- into xmpp-proxy-stack/generated/proxy.cfg.lua, which is what actually
+-- gets mounted at /etc/prosody/conf.d/proxy.cfg.lua. Edit this template,
+-- not the generated file directly.
 -- IMPORTANT: Settings in this file are loaded AFTER VirtualHost, so some settings
 -- need to be applied at the global level via the main config
 
@@ -99,8 +102,18 @@ sasl_mech_override = {
 }
 
 -- HTTP CORS headers for web admin
-http_default_host = "chat.dure.one"
-http_external_url = "http://chat.dure.one:5280/"
+http_default_host = "${XMPP_DOMAIN}"
+http_external_url = "https://${XMPP_DOMAIN}/"
+
+-- Mount admin_web2 under /prosody/admin to match the nginx reverse-proxy
+-- path (see xmpp-proxy-stack/nginx-proxy-ctl). This makes Prosody's own
+-- request path (and its trailing-slash redirect) match the external URL,
+-- so nginx doesn't need to rewrite response headers to compensate.
+-- bosh is intentionally left at its default "/http-bind" since admin_web2's
+-- bundled main.js hardcodes that root-relative path.
+http_paths = {
+    admin = "/prosody/admin";
+}
 
 ---------- PEP/OMEMO CONFIGURATION ----------
 

@@ -23,7 +23,7 @@ services:
     command: >
       sh -c '
         echo "=== Prosody Modules Initialization ===" &&
-        if [ -f prosody-modules/mod_admin_web2/mod_admin_web2.lua ]; then
+        if [ -f prosody-modules/mod_admin_web2/admin_web2/mod_admin_web2.lua ] && [ -f prosody-modules/mod_admin_web2/admin_web2/www_files/js/strophe.min.js ]; then
           echo "✓ prosody-modules already initialized" &&
           exit 0
         fi &&
@@ -33,8 +33,25 @@ services:
         rm -rf prosody-modules &&
         hg clone https://hg.prosody.im/prosody-modules prosody-modules &&
         echo "✓ Modules cloned successfully" &&
+        echo "Fetching admin_web2 vendored JS/CSS dependencies..." &&
+        (cd prosody-modules/mod_admin_web2/admin_web2 && sh get_deps.sh) &&
+        echo "✓ admin_web2 dependencies fetched" &&
         ls -la prosody-modules/ | head -20
       '
+
+  # Renders prosody-proxy.cfg.lua.template -> generated/proxy.cfg.lua,
+  # substituting ${XMPP_DOMAIN} from .env. Runs on every start (cheap, no
+  # caching) so it always reflects the current .env, unlike
+  # prosody-modules-init which skips work once already populated.
+  prosody-config-init:
+    image: alpine:latest
+    container_name: prosody-config-init
+    restart: "no"
+    working_dir: /workspace
+    env_file: .env
+    volumes:
+      - ./:/workspace
+    command: sh xmpp-proxy-stack/render-prosody-config.sh
 
   prosody:
     image: prosodyim/prosody:13.0
@@ -53,7 +70,7 @@ services:
       - /srv/xmpp/prosody:/var/lib/prosody
       - /srv/xmpp/certs:/certs:ro
       - /srv/xmpp/logs/prosody:/var/log/prosody
-      - ./xmpp-proxy-stack/templates/prosody-proxy.cfg.lua:/etc/prosody/conf.d/proxy.cfg.lua:ro
+      - ./xmpp-proxy-stack/generated/proxy.cfg.lua:/etc/prosody/conf.d/proxy.cfg.lua:ro
       - ./prosody-modules:/usr/lib/prosody/community:ro
     ports:
       # Expose on non-standard ports on localhost only so xmpp-proxy can connect
@@ -72,6 +89,8 @@ services:
       start_period: 10s
     depends_on:
       prosody-modules-init:
+        condition: service_completed_successfully
+      prosody-config-init:
         condition: service_completed_successfully
 
   xmpp-proxy-stack:

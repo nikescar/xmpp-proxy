@@ -12,3 +12,4 @@ conflict/
 .env
 docker-compose.override.yaml
 prosody-modules/
+xmpp-proxy-stack/generated/
