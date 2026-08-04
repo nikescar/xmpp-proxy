@@ -5,12 +5,15 @@
 ban_count_decay = "30d"
 
 # XMPP C2S Authentication Failures
+# Requires mod_log_auth (modules_enabled in prosody-proxy.cfg.lua.template) -
+# stock mod_saslauth fires an authentication-failure event but never logs a
+# plain wrong-password/unknown-user failure itself, so without mod_log_auth
+# there is no line here for this jail to match, regardless of log_path.
 [jail.xmpp-auth]
 enabled = true
-log_path = "/logs/prosody.log"
+log_path = "/logs/prosody/prosody.log"
 filter = [
-    'Failed authentication for .* from <HOST>',
-    'c2s[a-f0-9]+ Failed SASL authentication .* IP: <HOST>',
+    'Failed authentication attempt.*from IP: <HOST>',
 ]
 max_retry = ${FAIL2BAN_MAX_RETRY}
 find_time = "${FAIL2BAN_FIND_TIME}"
@@ -30,7 +33,7 @@ ignoreip = ["127.0.0.1/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.
 # XMPP S2S Abuse (connection flooding)
 [jail.xmpp-s2s-abuse]
 enabled = true
-log_path = "/logs/prosody.log"
+log_path = "/logs/prosody/prosody.log"
 filter = [
     's2s[a-f0-9]+ Connection rate limit exceeded for <HOST>',
     's2sin[a-f0-9]+ Received invalid XML from <HOST>',

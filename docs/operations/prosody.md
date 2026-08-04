@@ -82,11 +82,17 @@ docker compose restart prosody
 
 ## Logs
 
-Persisted on the host at `/srv/xmpp/logs/prosody` (mounted to
-`/var/log/prosody` in the container), or via Docker directly:
+Prosody writes to two places: `docker logs prosody` (its `*console` sink,
+always on), and a file at `/var/log/prosody/prosody.log` — persisted on the
+host at `/srv/xmpp/logs/prosody/prosody.log`, and readable by `fail2ban-rs`
+(from the `xmpp-proxy-stack` container) at `/logs/prosody/prosody.log`. Both
+sinks are configured together in `log = {...}` in
+`prosody-proxy.cfg.lua.template` — see [fail2ban-rs.md](./fail2ban-rs.md) for
+why the file sink exists (the `xmpp-auth`/`xmpp-s2s-abuse` jails need it).
 
 ```bash
 docker logs -f prosody
+docker exec prosody tail -f /var/log/prosody/prosody.log
 ```
 
 ## Certificates

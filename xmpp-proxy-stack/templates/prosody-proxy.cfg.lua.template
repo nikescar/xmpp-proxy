@@ -11,6 +11,19 @@
 -- Add pidfile for health checks
 pidfile = "/var/run/prosody/prosody.pid"
 
+-- Logging: this table replaces (not merges with) the prosody image's own
+-- default `log = { [LOGLEVEL] = "*console" }` from /etc/prosody/prosody.cfg.lua,
+-- since conf.d is loaded after it and Lua assignment overwrites the global.
+-- Re-adds console (so `docker logs prosody` keeps working) and adds a file
+-- sink other tools can tail - notably fail2ban-rs's xmpp-auth/xmpp-s2s-abuse
+-- jails, which read /var/log/prosody/prosody.log (mounted through to
+-- xmpp-proxy-stack as /logs/prosody/prosody.log) and had nothing to read
+-- before this, since Prosody never wrote to a file at all.
+log = {
+    { to = "console", levels = { min = "info" } };
+    { to = "file", filename = "/var/log/prosody/prosody.log", levels = { min = "info" } };
+}
+
 -- PROXY protocol support via mod_net_proxy from prosody-modules
 -- Community modules mounted at: /usr/lib/prosody/community
 plugin_paths = { "/usr/lib/prosody/community" }
@@ -71,6 +84,15 @@ modules_enabled = {
 
     -- Proxy-specific modules
     "net_proxy";     -- Parse PROXY protocol v1/v2 headers to extract real client IP
+
+    -- Auth logging: mod_saslauth fires an authentication-failure event but
+    -- doesn't itself log anything for a plain wrong-password/unknown-user
+    -- failure - without this, fail2ban-rs's xmpp-auth jail has no log line
+    -- to match, no matter how log_path/level is configured. Default mode
+    -- ("failure") logs "Failed authentication attempt (<condition>) for
+    -- user <user>@<host> from IP: <ip>" at info level - see fail2ban-rs's
+    -- xmpp-auth jail filter, which matches this exact wording.
+    "log_auth";      -- Log authentication successes/failures (community module)
 
     -- HTTP/Admin modules
     "http";          -- HTTP server for web admin

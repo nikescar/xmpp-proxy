@@ -67,6 +67,16 @@ it survives a plain `docker compose restart`. `ENABLE_WEB_ADMIN` locations are
 re-added automatically on every entrypoint run; anything added manually via
 `nginx-proxy-ctl add` is not persisted and must be re-added after recreation.
 
+**BOSH (`/http-bind/`) needs a longer timeout than the other `ENABLE_WEB_ADMIN`
+routes.** Prosody's `bosh_max_wait` (`prosody-proxy.cfg.lua.template`) is
+120s — the longest a BOSH long-poll hold request may legitimately stay open
+before Prosody responds. `docker-entrypoint.sh` sets `/http-bind/`'s
+`PROXY_TIMEOUT` to `150s` (vs. `60s` for `/prosody/` and `/xmpp-websocket`)
+to clear that with margin. Confirmed live: with a 60s timeout on all three,
+`/http-bind/` requests 504'd every ~60-90s in `nginx-access.log` (nginx
+killing the connection before Prosody's legitimate 120s hold completed). If
+you change `bosh_max_wait`, keep `/http-bind/`'s timeout above it.
+
 ## Logs
 
 ```bash

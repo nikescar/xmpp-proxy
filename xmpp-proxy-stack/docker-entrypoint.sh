@@ -132,13 +132,22 @@ mkdir -p /etc/nginx/conf.d
 if [ "${ENABLE_WEB_ADMIN:-false}" = "true" ]; then
     echo "Configuring Prosody web admin reverse proxy (ENABLE_WEB_ADMIN=true)..."
     for entry in \
-        "/prosody/ http://127.0.0.1:15280 no" \
-        "/http-bind/ http://127.0.0.1:15280/http-bind/ no" \
-        "/xmpp-websocket http://127.0.0.1:15280/xmpp-websocket yes" \
+        "/prosody/ http://127.0.0.1:15280 no 60s" \
+        "/http-bind/ http://127.0.0.1:15280/http-bind/ no 150s" \
+        "/xmpp-websocket http://127.0.0.1:15280/xmpp-websocket yes 60s" \
     ; do
         location_path=$(echo "$entry" | awk '{print $1}')
         upstream_url=$(echo "$entry" | awk '{print $2}')
         websocket=$(echo "$entry" | awk '{print $3}')
+        # /http-bind/ gets a longer timeout than the others: Prosody's
+        # bosh_max_wait (prosody-proxy.cfg.lua.template) is 120s - the
+        # longest a BOSH long-poll hold request may legitimately stay open
+        # with no data before Prosody itself responds empty. A 60s nginx
+        # proxy_read_timeout fires well before that, killing the connection
+        # with a 504 on every hold that outlasts 60s (confirmed live: BOSH
+        # requests 504ing every ~60-90s in nginx-access.log). 150s clears
+        # bosh_max_wait with margin for scheduling/network jitter.
+        route_timeout=$(echo "$entry" | awk '{print $4}')
         websocket_headers=""
         if [ "$websocket" = "yes" ]; then
             websocket_headers='proxy_set_header Upgrade $http_upgrade;
@@ -147,7 +156,7 @@ if [ "${ENABLE_WEB_ADMIN:-false}" = "true" ]; then
         # Same md5-of-path naming nginx-proxy-ctl uses, so these show up in
         # `nginx-proxy-ctl list` and can be overridden/removed with it too.
         hash=$(echo -n "$location_path" | md5sum | awk '{print $1}')
-        LOCATION_PATH="$location_path" UPSTREAM_URL="$upstream_url" WEBSOCKET_HEADERS="$websocket_headers" CUSTOM_HEADERS="" PROXY_TIMEOUT="60s" \
+        LOCATION_PATH="$location_path" UPSTREAM_URL="$upstream_url" WEBSOCKET_HEADERS="$websocket_headers" CUSTOM_HEADERS="" PROXY_TIMEOUT="$route_timeout" \
             envsubst '${LOCATION_PATH} ${UPSTREAM_URL} ${WEBSOCKET_HEADERS} ${CUSTOM_HEADERS} ${PROXY_TIMEOUT}' \
             < /etc/templates/location-proxy.conf.template > "/etc/nginx/conf.d/proxy-${hash}.conf"
     done

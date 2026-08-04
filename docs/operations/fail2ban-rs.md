@@ -28,8 +28,8 @@ Defined in `xmpp-proxy-stack/templates/fail2ban-rs-config.toml.template`:
 
 | Jail | Log source | Ports protected | Trigger |
 |---|---|---|---|
-| `xmpp-auth` | `/logs/prosody.log` | 5222, 5223 (C2S) | Failed authentication / SASL |
-| `xmpp-s2s-abuse` | `/logs/prosody.log` | 5269 (S2S) | Connection rate limit, invalid XML |
+| `xmpp-auth` | `/logs/prosody/prosody.log` | 5222, 5223 (C2S) | Failed authentication (via `mod_log_auth`) |
+| `xmpp-s2s-abuse` | `/logs/prosody/prosody.log` | 5269 (S2S) | Connection rate limit, invalid XML |
 | `xmpp-stanza-flood` | `/logs/xmpp-proxy.log` | (xmpp-proxy's own listeners) | Oversized stanzas, rate limit |
 | `nginx-scan` | `/logs/nginx-access.log` | 80, 443 (nginx) | Requests for known exploit paths (`wp-login`, `.env`, `.git`, `phpmyadmin`, etc.) — low threshold (2 hits/10m), since a single hit is never legitimate |
 | `nginx-abuse` | `/logs/nginx-access.log` | 80, 443 (nginx) | Repeated 400/401/403/413 responses on any path — higher threshold (15 hits/2m) |
@@ -50,6 +50,26 @@ admin IP racked up 86 hits under a 404-inclusive pattern and zero under the
 403/401/400/413-only one. 404-based exploit-path scanning is still covered,
 just narrowly, by `nginx-scan`'s explicit path list instead of a blanket
 status-code match.
+
+`xmpp-auth` requires the `log_auth` community module (mod_log_auth, enabled
+in `modules_enabled` in `prosody-proxy.cfg.lua.template`) to actually produce
+a matching log line. Stock `mod_saslauth` fires an `authentication-failure`
+event for a wrong password/unknown user but never logs it itself - without
+`mod_log_auth` hooking that event, `/logs/prosody/prosody.log` never
+contains anything for this jail to match, no matter how `log_path`/log level
+is configured (confirmed by triggering a real failed SASL PLAIN login and
+checking Prosody's own module source - nothing under
+`/usr/lib/prosody/modules/mod_saslauth.lua` calls `module:log` for the
+ordinary not-authorized case). `mod_log_auth`'s default mode (`"failure"`)
+logs `Failed authentication attempt (<condition>) for user <user>@<host>
+from IP: <ip>` at `info` level, which is what the jail's filter matches.
+
+Also note: Prosody's own `log` config (baked into the `prosodyim/prosody`
+image's `/etc/prosody/prosody.cfg.lua`) only sends to `*console` (captured by
+`docker logs prosody`) — nothing was ever written to a file before this, so
+`/var/log/prosody/prosody.log` (mounted through as
+`/logs/prosody/prosody.log` on the `xmpp-proxy-stack` side) had to be added
+explicitly via a `log` table in `prosody-proxy.cfg.lua.template`.
 
 ## Checking status and stats
 
@@ -133,7 +153,7 @@ docker exec xmpp-proxy-stack /usr/local/bin/fail2ban-rs regex \
   --line 'Failed authentication for user123 from 203.0.113.5'
 
 # Replay a whole log file through a jail's filters, no bans applied
-docker exec xmpp-proxy-stack /usr/local/bin/fail2ban-rs dry-run /logs/prosody.log --jail xmpp-auth
+docker exec xmpp-proxy-stack /usr/local/bin/fail2ban-rs dry-run /logs/prosody/prosody.log --jail xmpp-auth
 ```
 
 ## Discovering built-in filters and generating new jails
