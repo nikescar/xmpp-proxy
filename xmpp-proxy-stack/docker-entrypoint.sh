@@ -62,7 +62,7 @@ if [ ! -f /certs/fullchain.pem ] || [ ! -f /certs/privkey.pem ]; then
 
         # Replace temporary certs with real ones
         rm -f /certs/fullchain.pem /certs/privkey.pem
-        ln -s "/etc/acme.sh/default/${XMPP_DOMAIN}/${XMPP_DOMAIN}.cer" /certs/fullchain.pem
+        ln -s "/etc/acme.sh/default/${XMPP_DOMAIN}/fullchain.cer" /certs/fullchain.pem
         ln -s "/etc/acme.sh/default/${XMPP_DOMAIN}/${XMPP_DOMAIN}.key" /certs/privkey.pem
         echo "✓ Certificate acquired successfully!"
     else
