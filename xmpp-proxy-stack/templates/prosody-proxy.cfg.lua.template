@@ -72,6 +72,7 @@ modules_enabled = {
     "admin_shell";   -- Enable prosodyctl shell access
     "admin_adhoc";   -- Admin ad-hoc commands
     "bosh";          -- BOSH (Bidirectional-streams Over Synchronous HTTP)
+    "websocket";     -- Native XMPP over WebSocket (XEP-0468), at /xmpp-websocket
 
     -- User management
     "register";      -- User registration

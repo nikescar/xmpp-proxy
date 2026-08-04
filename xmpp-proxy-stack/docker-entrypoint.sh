@@ -120,27 +120,38 @@ fi
 mkdir -p /etc/nginx/conf.d
 
 # Optionally auto-configure a reverse proxy to Prosody's web admin
-# (admin_web2) and BOSH endpoints. conf.d isn't a volume, so anything added
-# here or via nginx-proxy-ctl is lost on container recreation - recreate
-# these fresh on every start instead of relying on a one-time manual
-# `nginx-proxy-ctl add`. Written directly from the template (rather than
-# via `nginx-proxy-ctl add`) because that command's final `nginx -s reload`
-# requires an already-running nginx, and nginx hasn't been started yet at
-# this point - Horust starts it fresh right after and picks these up
-# without needing a reload.
+# (admin_web2), BOSH, and native XMPP WebSocket (XEP-0468) endpoints.
+# conf.d isn't a volume, so anything added here or via nginx-proxy-ctl is
+# lost on container recreation - recreate these fresh on every start
+# instead of relying on a one-time manual `nginx-proxy-ctl add`. Written
+# directly from the template (rather than via `nginx-proxy-ctl add`)
+# because that command's final `nginx -s reload` requires an
+# already-running nginx, and nginx hasn't been started yet at this point -
+# Horust starts it fresh right after and picks these up without needing a
+# reload.
 if [ "${ENABLE_WEB_ADMIN:-false}" = "true" ]; then
     echo "Configuring Prosody web admin reverse proxy (ENABLE_WEB_ADMIN=true)..."
-    for entry in "/prosody/ http://127.0.0.1:15280" "/http-bind/ http://127.0.0.1:15280/http-bind/"; do
-        location_path="${entry%% *}"
-        upstream_url="${entry#* }"
+    for entry in \
+        "/prosody/ http://127.0.0.1:15280 no" \
+        "/http-bind/ http://127.0.0.1:15280/http-bind/ no" \
+        "/xmpp-websocket http://127.0.0.1:15280/xmpp-websocket yes" \
+    ; do
+        location_path=$(echo "$entry" | awk '{print $1}')
+        upstream_url=$(echo "$entry" | awk '{print $2}')
+        websocket=$(echo "$entry" | awk '{print $3}')
+        websocket_headers=""
+        if [ "$websocket" = "yes" ]; then
+            websocket_headers='proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";'
+        fi
         # Same md5-of-path naming nginx-proxy-ctl uses, so these show up in
         # `nginx-proxy-ctl list` and can be overridden/removed with it too.
         hash=$(echo -n "$location_path" | md5sum | awk '{print $1}')
-        LOCATION_PATH="$location_path" UPSTREAM_URL="$upstream_url" WEBSOCKET_HEADERS="" CUSTOM_HEADERS="" PROXY_TIMEOUT="60s" \
+        LOCATION_PATH="$location_path" UPSTREAM_URL="$upstream_url" WEBSOCKET_HEADERS="$websocket_headers" CUSTOM_HEADERS="" PROXY_TIMEOUT="60s" \
             envsubst '${LOCATION_PATH} ${UPSTREAM_URL} ${WEBSOCKET_HEADERS} ${CUSTOM_HEADERS} ${PROXY_TIMEOUT}' \
             < /etc/templates/location-proxy.conf.template > "/etc/nginx/conf.d/proxy-${hash}.conf"
     done
-    echo "✓ Configured /prosody/ (admin) and /http-bind/ (BOSH) reverse proxy locations"
+    echo "✓ Configured /prosody/ (admin), /http-bind/ (BOSH), and /xmpp-websocket reverse proxy locations"
 fi
 
 echo "=== Initialization complete, starting Horust ==="

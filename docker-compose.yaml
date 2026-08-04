@@ -59,7 +59,7 @@ services:
       PROSODY_VIRTUAL_HOSTS: ${XMPP_DOMAIN}
       PROSODY_LOGLEVEL: ${PROSODY_LOGLEVEL:-info}
       PROSODY_STORAGE: internal
-      PROSODY_ENABLE_MODULES: mam,carbons,csi_simple,ping,admin_adhoc,admin_shell,http,admin_web2,bosh
+      PROSODY_ENABLE_MODULES: mam,carbons,csi_simple,ping,admin_adhoc,admin_shell,http,admin_web2,bosh,websocket
       PROSODY_CERTIFICATES: /certs
       PROSODY_RETENTION_DAYS: ${PROSODY_RETENTION_DAYS:-90}
     volumes:
