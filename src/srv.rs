@@ -14,9 +14,10 @@ use anyhow::{bail, Result};
 use data_encoding::BASE64;
 use hickory_resolver::{
     config::LookupIpStrategy,
-    lookup::{SrvLookup, TxtLookup},
-    lookup_ip::LookupIpIntoIter,
-    IntoName, ResolveError, TokioResolver,
+    lookup::Lookup,
+    net::NetError,
+    proto::rr::{IntoName, RData},
+    TokioResolver,
 };
 use log::{debug, error, trace};
 use reqwest::{
@@ -42,7 +43,7 @@ static HTTPS_CLIENT: LazyLock<Client> = LazyLock::new(make_https_client);
 fn make_resolver() -> TokioResolver {
     let mut builder = TokioResolver::builder_tokio().expect("failed to build TokioResolver");
     builder.options_mut().ip_strategy = LookupIpStrategy::Ipv4AndIpv6;
-    builder.build()
+    builder.build().expect("failed to build TokioResolver")
 }
 
 struct HickoryDnsResolver;
@@ -51,14 +52,14 @@ impl Resolve for HickoryDnsResolver {
     fn resolve(&self, name: Name) -> Resolving {
         Box::pin(async move {
             let lookup = RESOLVER.lookup_ip(name.as_str()).await?;
-            let addrs: Addrs = Box::new(SocketAddrs { iter: lookup.into_iter() });
+            let addrs: Addrs = Box::new(SocketAddrs { iter: lookup.iter().collect::<Vec<_>>().into_iter() });
             Ok(addrs)
         })
     }
 }
 
 struct SocketAddrs {
-    iter: LookupIpIntoIter,
+    iter: std::vec::IntoIter<IpAddr>,
 }
 
 impl Iterator for SocketAddrs {
@@ -299,20 +300,22 @@ impl XmppConnection {
     }
 }
 
-fn collect_srvs(ret: &mut Vec<XmppConnection>, srv_records: std::result::Result<SrvLookup, ResolveError>, conn_type: XmppConnectionType) {
+fn collect_srvs(ret: &mut Vec<XmppConnection>, srv_records: std::result::Result<Lookup, NetError>, conn_type: XmppConnectionType) {
     if let Ok(srv_records) = srv_records {
-        for srv in srv_records.iter() {
-            if !srv.target().is_root() {
-                ret.push(XmppConnection {
-                    conn_type: conn_type.clone(),
-                    priority: srv.priority(),
-                    weight: srv.weight(),
-                    port: srv.port(),
-                    target: srv.target().to_ascii(),
-                    secure: false, // todo: support dnssec here, and if true, look up TLSA
-                    ips: Vec::new(),
-                    ech: None,
-                });
+        for record in srv_records.answers() {
+            if let RData::SRV(srv) = &record.data {
+                if !srv.target.is_root() {
+                    ret.push(XmppConnection {
+                        conn_type: conn_type.clone(),
+                        priority: srv.priority,
+                        weight: srv.weight,
+                        port: srv.port,
+                        target: srv.target.to_ascii(),
+                        secure: false, // todo: support dnssec here, and if true, look up TLSA
+                        ips: Vec::new(),
+                        ech: None,
+                    });
+                }
             }
         }
     }
@@ -373,21 +376,23 @@ fn wt_to_srv(url: &str) -> Option<(XmppConnectionType, u16)> {
 }
 
 #[cfg(feature = "websocket")]
-fn collect_txts(ret: &mut Vec<XmppConnection>, txt_records: std::result::Result<TxtLookup, ResolveError>, is_c2s: bool) {
+fn collect_txts(ret: &mut Vec<XmppConnection>, txt_records: std::result::Result<Lookup, NetError>, is_c2s: bool) {
     if let Ok(txt_records) = txt_records {
-        for txt in txt_records.iter() {
-            for txt in txt.iter() {
-                // we only support wss and not ws (insecure) on purpose
-                if txt.starts_with(if is_c2s { b"_xmpp-client-websocket=wss://" } else { b"_xmpp-server-websocket=wss://" }) {
-                    // 23 is the length of "_xmpp-client-websocket=" and "_xmpp-server-websocket="
-                    if let Ok(url) = String::from_utf8(txt[23..].to_vec()) {
-                        if let Some(srv) = wss_to_srv(&url, false) {
-                            if !ret.contains(&srv) {
-                                ret.push(srv);
+        for record in txt_records.answers() {
+            if let RData::TXT(txt) = &record.data {
+                for txt in txt.txt_data.iter() {
+                    // we only support wss and not ws (insecure) on purpose
+                    if txt.starts_with(if is_c2s { b"_xmpp-client-websocket=wss://" } else { b"_xmpp-server-websocket=wss://" }) {
+                        // 23 is the length of "_xmpp-client-websocket=" and "_xmpp-server-websocket="
+                        if let Ok(url) = String::from_utf8(txt[23..].to_vec()) {
+                            if let Some(srv) = wss_to_srv(&url, false) {
+                                if !ret.contains(&srv) {
+                                    ret.push(srv);
+                                }
                             }
+                        } else {
+                            debug!("invalid TXT record '{}'", to_str(txt));
                         }
-                    } else {
-                        debug!("invalid TXT record '{}'", to_str(txt));
                     }
                 }
             }
