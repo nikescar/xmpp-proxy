@@ -119,18 +119,50 @@ pub async fn shuffle_rd_wr_filter(
     client_addr: &mut Context<'_>,
     mut in_filter: StanzaFilter,
 ) -> Result<()> {
-    // now read to figure out client vs server
-    let (stream_open, is_c2s) = stream_preamble(&mut in_rd, &mut in_wr, client_addr.log_from(), &mut in_filter).await?;
+    // Check ALPN protocol for routing decision (XEP-0368 Direct TLS)
+    #[cfg(any(feature = "s2s-incoming", feature = "webtransport"))]
+    let is_c2s_from_alpn = server_certs.alpn().and_then(|alpn| {
+        if alpn == ALPN_XMPP_CLIENT {
+            Some(true)
+        } else if alpn == ALPN_XMPP_SERVER {
+            Some(false)
+        } else {
+            None
+        }
+    });
+    #[cfg(not(any(feature = "s2s-incoming", feature = "webtransport")))]
+    let is_c2s_from_alpn: Option<bool> = None;
+
+    // Read XMPP stream to get stream_open tag and fallback routing
+    let (stream_open, is_c2s_from_stream) = stream_preamble(&mut in_rd, &mut in_wr, client_addr.log_from(), &mut in_filter).await?;
+
+    // Prefer ALPN over stream parsing for routing (XEP-0368 multiplexing)
+    let is_c2s = is_c2s_from_alpn.unwrap_or(is_c2s_from_stream);
+
+    // Log routing decision and warn if ALPN conflicts with stream
+    #[cfg(any(feature = "s2s-incoming", feature = "webtransport"))]
+    if let Some(alpn_decision) = is_c2s_from_alpn {
+        if alpn_decision != is_c2s_from_stream {
+            log::warn!(
+                "{} ALPN routing conflict: ALPN={} stream={} - using ALPN",
+                client_addr.log_from(),
+                if alpn_decision { "c2s" } else { "s2s" },
+                if is_c2s_from_stream { "c2s" } else { "s2s" }
+            );
+        }
+    }
+
     client_addr.set_c2s_stream_open(is_c2s, &stream_open);
 
     #[cfg(feature = "s2s-incoming")]
     {
         trace!(
-            "{} connected: sni: {:?}, alpn: {:?}, tls-not-quic: {}",
+            "{} connected: sni: {:?}, alpn: {:?}, tls-not-quic: {}, routed-as: {}",
             client_addr.log_from(),
             server_certs.sni(),
             server_certs.alpn().map(|a| String::from_utf8_lossy(a).to_string()),
             server_certs.is_tls(),
+            if is_c2s { "c2s" } else { "s2s" },
         );
 
         if !is_c2s {
