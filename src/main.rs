@@ -123,7 +123,13 @@ async fn main() {
     }
     xmpp_proxy::install_default_rustls_provider().die("invalid crypto provider");
     let cfg_path = cfg_path.unwrap_or_else(|| OsString::from("/etc/xmpp-proxy/xmpp-proxy.toml"));
-    let main_config = Config::parse(&cfg_path).die("invalid config file");
+    let main_config = match Config::parse(&cfg_path) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("Failed to parse config file {:?}: {}", cfg_path, e);
+            std::process::exit(1);
+        }
+    };
 
     #[cfg(feature = "logging")]
     {
@@ -147,15 +153,33 @@ async fn main() {
 
     let mut incoming_listen = Vec::new();
     for a in main_config.incoming_listen.iter() {
-        incoming_listen.push(a.bind().await.die("cannot listen on port/interface/socket"));
+        match a.bind().await {
+            Ok(listener) => incoming_listen.push(listener),
+            Err(e) => {
+                eprintln!("Failed to bind incoming_listen {}: {}", a, e);
+                std::process::exit(1);
+            }
+        }
     }
     let mut quic_listen = Vec::new();
     for a in main_config.quic_listen.iter() {
-        quic_listen.push(a.bind_udp().await.die("cannot listen on port/interface/socket"));
+        match a.bind_udp().await {
+            Ok(listener) => quic_listen.push(listener),
+            Err(e) => {
+                eprintln!("Failed to bind quic_listen {}: {}", a, e);
+                std::process::exit(1);
+            }
+        }
     }
     let mut outgoing_listen = Vec::new();
     for a in main_config.outgoing_listen.iter() {
-        outgoing_listen.push(a.bind().await.die("cannot listen on port/interface/socket"));
+        match a.bind().await {
+            Ok(listener) => outgoing_listen.push(listener),
+            Err(e) => {
+                eprintln!("Failed to bind outgoing_listen {}: {}", a, e);
+                std::process::exit(1);
+            }
+        }
     }
 
     #[cfg(all(feature = "nix", not(target_os = "windows")))]
