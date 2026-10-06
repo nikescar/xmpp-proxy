@@ -1029,7 +1029,8 @@ mod tests {
         let domain = "burtrum.org";
         let is_c2s = true;
         let (srvs, cert_verifier) = get_xmpp_connections(domain, is_c2s).await?;
-        println!("cert_verifier: {:?}", cert_verifier);
+        // Removed cleartext logging of cert_verifier (security: CodeQL alert #1)
+        println!("cert_verifier present: {}", cert_verifier.is_some());
         for srv in srvs {
             println!("trying 1 domain {}, SRV: {:?}", domain, srv);
             let ips = RESOLVER.lookup_ip(srv.target.clone()).await?;

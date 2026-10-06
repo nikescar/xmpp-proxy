@@ -92,7 +92,7 @@ impl XmppServerCertVerifier {
         if !self.sha256_pinnedpubkeys.is_empty() {
             let cert = webpki::anchor_from_trusted_cert(end_entity).map_err(pki_error)?;
             trace!("subject_public_key_info.len(): {}", cert.subject_public_key_info.len());
-            trace!("subject_public_key_info: {:?}", cert.subject_public_key_info);
+            // Removed cleartext logging of certificate public key data (security: CodeQL alert #2)
             // todo: what is wrong with webpki? it returns *almost* the right answer but missing these leading bytes:
             // guess I'll open an issue... (I assume this is some type of algorithm identifying header or something)
             let mut pubkey: Vec<u8> = vec![48, 130, 1, 34];
