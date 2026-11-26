@@ -119,36 +119,49 @@ pub async fn shuffle_rd_wr_filter(
     client_addr: &mut Context<'_>,
     mut in_filter: StanzaFilter,
 ) -> Result<()> {
-    // now read to figure out client vs server
-    let (stream_open, is_c2s) = stream_preamble(&mut in_rd, &mut in_wr, client_addr.log_from(), &mut in_filter).await?;
-    client_addr.set_c2s_stream_open(is_c2s, &stream_open);
+    let pre: Result<_> = async {
+        // now read to figure out client vs server
+        let (stream_open, is_c2s) = stream_preamble(&mut in_rd, &mut in_wr, client_addr.log_from(), &mut in_filter).await?;
+        client_addr.set_c2s_stream_open(is_c2s, &stream_open);
 
-    #[cfg(feature = "s2s-incoming")]
-    {
-        trace!(
-            "{} connected: sni: {:?}, alpn: {:?}, tls-not-quic: {}",
-            client_addr.log_from(),
-            server_certs.sni(),
-            server_certs.alpn().map(|a| String::from_utf8_lossy(a).to_string()),
-            server_certs.is_tls(),
-        );
+        #[cfg(feature = "s2s-incoming")]
+        {
+            trace!(
+                "{} connected: sni: {:?}, alpn: {:?}, tls-not-quic: {}",
+                client_addr.log_from(),
+                server_certs.sni(),
+                server_certs.alpn().map(|a| String::from_utf8_lossy(a).to_string()),
+                server_certs.is_tls(),
+            );
 
-        if !is_c2s {
-            // for s2s we need this
-            let domain = stream_open
-                .extract_between(b" from='", b"'")
-                .or_else(|_| stream_open.extract_between(b" from=\"", b"\""))
-                .and_then(|b| Ok(std::str::from_utf8(b)?))?;
-            let (_, cert_verifier) = crate::srv::get_xmpp_connections(domain, is_c2s).await?;
-            let certs = server_certs.peer_certificates().ok_or_else(|| anyhow!("no client cert auth for s2s incoming from {}", domain))?;
-            // todo: send stream error saying cert is invalid
-            cert_verifier.verify_cert(&certs[0], &certs[1..], UnixTime::now())?;
+            if !is_c2s {
+                // for s2s we need this
+                let domain = stream_open
+                    .extract_between(b" from='", b"'")
+                    .or_else(|_| stream_open.extract_between(b" from=\"", b"\""))
+                    .and_then(|b| Ok(std::str::from_utf8(b)?))?;
+                let (_, cert_verifier) = crate::srv::get_xmpp_connections(domain, is_c2s).await?;
+                let certs = server_certs.peer_certificates().ok_or_else(|| anyhow!("no client cert auth for s2s incoming from {}", domain))?;
+                // todo: send stream error saying cert is invalid
+                cert_verifier.verify_cert(&certs[0], &certs[1..], UnixTime::now())?;
+            }
+            drop(server_certs);
         }
-        drop(server_certs);
-    }
 
-    let (out_rd, out_wr) = open_incoming(&config, local_addr, client_addr, &stream_open, is_c2s, &mut in_filter).await?;
-    drop(stream_open);
+        let (out_rd, out_wr) = open_incoming(&config, local_addr, client_addr, &stream_open, is_c2s, &mut in_filter).await?;
+        drop(stream_open);
+        Ok((out_rd, out_wr, is_c2s))
+    }
+    .await;
+
+    // e.g. backend unreachable or s2s cert rejected: close client side cleanly (TLS close_notify) before returning the error
+    let (out_rd, out_wr, is_c2s) = match pre {
+        Ok(v) => v,
+        Err(e) => {
+            in_wr.shutdown().await;
+            return Err(e);
+        }
+    };
 
     shuffle_rd_wr_filter_only(in_rd, in_wr, out_rd, out_wr, is_c2s, config.max_stanza_size_bytes, client_addr, in_filter).await
 }

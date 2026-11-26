@@ -376,34 +376,42 @@ pub async fn shuffle_rd_wr_filter_only(
 ) -> Result<()> {
     let mut out_filter = StanzaFilter::new(max_stanza_size_bytes);
 
-    loop {
-        tokio::select! {
-            Ok(ret) = in_rd.next(&mut in_filter, client_addr.log_to(), &mut in_wr) => {
-                match ret {
-                    None => break,
-                    Some((buf, eoft)) => {
-                        trace!("{} '{}'", client_addr.log_from(), to_str(buf));
-                        out_wr.write_all(is_c2s, buf, eoft, client_addr.log_from()).await?;
-                        out_wr.flush().await?;
+    let ret: Result<()> = async {
+        loop {
+            tokio::select! {
+                Ok(ret) = in_rd.next(&mut in_filter, client_addr.log_to(), &mut in_wr) => {
+                    match ret {
+                        None => break,
+                        Some((buf, eoft)) => {
+                            trace!("{} '{}'", client_addr.log_from(), to_str(buf));
+                            out_wr.write_all(is_c2s, buf, eoft, client_addr.log_from()).await?;
+                            out_wr.flush().await?;
+                        }
                     }
-                }
-            },
-            Ok(ret) = out_rd.next(&mut out_filter, client_addr.log_from(), &mut out_wr) => {
-                match ret {
-                    None => break,
-                    Some((buf, eoft)) => {
-                        trace!("{} '{}'", client_addr.log_to(), to_str(buf));
-                        in_wr.write_all(is_c2s, buf, eoft, client_addr.log_to()).await?;
-                        in_wr.flush().await?;
+                },
+                Ok(ret) = out_rd.next(&mut out_filter, client_addr.log_from(), &mut out_wr) => {
+                    match ret {
+                        None => break,
+                        Some((buf, eoft)) => {
+                            trace!("{} '{}'", client_addr.log_to(), to_str(buf));
+                            in_wr.write_all(is_c2s, buf, eoft, client_addr.log_to()).await?;
+                            in_wr.flush().await?;
+                        }
                     }
-                }
-            },
-            else => break,
+                },
+                else => break,
+            }
         }
+        Ok(())
     }
+    .await;
+
+    // close both sides cleanly on every exit path, otherwise TLS peers never get close_notify
+    in_wr.shutdown().await;
+    out_wr.shutdown().await;
 
     info!("{} disconnected", client_addr.log_from());
-    Ok(())
+    ret
 }
 
 #[cfg(feature = "rustls-pemfile")]

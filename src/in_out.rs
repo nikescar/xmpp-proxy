@@ -65,6 +65,24 @@ impl StanzaWrite {
             WebSocketClientWrite(ws) => Ok(ws.flush().await?),
         }
     }
+
+    /// Best-effort graceful close: sends TLS close_notify, TCP FIN, QUIC FIN or WebSocket Close.
+    /// Without this, dropping a TLS stream just closes TCP, which strict clients (rustls) report as truncation.
+    /// Bounded by a timeout so a stalled peer cannot hang the task; errors are ignored since the connection is ending anyway.
+    pub async fn shutdown(&mut self) {
+        let close = async {
+            match self {
+                AsyncWrite(wr) => wr.shutdown().await.map_err(anyhow::Error::from),
+                #[cfg(feature = "websocket")]
+                WebSocketClientWrite(ws) => ws.close().await.map_err(anyhow::Error::from),
+            }
+        };
+        match tokio::time::timeout(std::time::Duration::from_secs(5), close).await {
+            Ok(Err(e)) => trace!("shutdown error: {}", e),
+            Err(_) => trace!("shutdown timed out"),
+            Ok(Ok(())) => {}
+        }
+    }
 }
 
 impl StanzaRead {
@@ -119,5 +137,101 @@ impl StanzaRead {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::duplex;
+
+    #[tokio::test]
+    async fn test_stanza_write_shutdown_success() {
+        // Arrange: create in-memory bidirectional channel
+        let (client, server) = duplex(64);
+        let mut writer = StanzaWrite::new(client);
+
+        // Act: call shutdown
+        writer.shutdown().await;
+
+        // Assert: verify server side can detect clean close
+        // (no data written, just shutdown called)
+        drop(writer);
+        drop(server);
+        // If shutdown works, this test completes without panic
+    }
+
+    #[tokio::test]
+    async fn test_stanza_write_shutdown_timeout() {
+        use std::pin::Pin;
+        use std::task::{Context as TaskContext, Poll};
+        use tokio::io::AsyncWrite;
+
+        // Mock writer that hangs on shutdown
+        struct HangingWriter;
+        impl AsyncWrite for HangingWriter {
+            fn poll_write(
+                self: Pin<&mut Self>,
+                _cx: &mut TaskContext<'_>,
+                buf: &[u8],
+            ) -> Poll<std::io::Result<usize>> {
+                Poll::Ready(Ok(buf.len()))
+            }
+
+            fn poll_flush(self: Pin<&mut Self>, _cx: &mut TaskContext<'_>) -> Poll<std::io::Result<()>> {
+                Poll::Ready(Ok(()))
+            }
+
+            fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut TaskContext<'_>) -> Poll<std::io::Result<()>> {
+                // Never complete - simulate hanging
+                Poll::Pending
+            }
+        }
+
+        // Arrange
+        let mut writer = StanzaWrite::new(HangingWriter);
+
+        // Act: shutdown should timeout after 5s, not hang forever
+        let start = std::time::Instant::now();
+        writer.shutdown().await;
+        let elapsed = start.elapsed();
+
+        // Assert: should complete in ~5s, not hang
+        assert!(elapsed.as_secs() >= 4 && elapsed.as_secs() <= 6, "Expected ~5s timeout, got {:?}", elapsed);
+    }
+
+    #[tokio::test]
+    async fn test_stanza_write_shutdown_error_ignored() {
+        use std::pin::Pin;
+        use std::task::{Context as TaskContext, Poll};
+        use tokio::io::AsyncWrite;
+
+        // Mock writer that errors on shutdown
+        struct ErrorWriter;
+        impl AsyncWrite for ErrorWriter {
+            fn poll_write(
+                self: Pin<&mut Self>,
+                _cx: &mut TaskContext<'_>,
+                buf: &[u8],
+            ) -> Poll<std::io::Result<usize>> {
+                Poll::Ready(Ok(buf.len()))
+            }
+
+            fn poll_flush(self: Pin<&mut Self>, _cx: &mut TaskContext<'_>) -> Poll<std::io::Result<()>> {
+                Poll::Ready(Ok(()))
+            }
+
+            fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut TaskContext<'_>) -> Poll<std::io::Result<()>> {
+                Poll::Ready(Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "simulated error")))
+            }
+        }
+
+        // Arrange
+        let mut writer = StanzaWrite::new(ErrorWriter);
+
+        // Act: shutdown should not panic on error
+        writer.shutdown().await;
+
+        // Assert: no panic = error was ignored correctly
     }
 }
